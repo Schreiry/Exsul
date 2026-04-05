@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
 	import {
 		nodeId,
 		syncStatus,
@@ -11,7 +10,7 @@
 		loadTrustedNodes,
 		loadWsStatus,
 		syncWithPeer,
-		listenWsPeers,
+		resetSyncUi,
 	} from '$lib/stores/sync';
 	import { commands } from '$lib/tauri/commands';
 	import type { TrustedNode } from '$lib/tauri/types';
@@ -31,17 +30,12 @@
 	let addNodeError = $state('');
 	let copied = $state(false);
 
-	// ── lifecycle ─────────────────────────────────────────────
-	let unlisten: (() => void) | undefined;
-
-	onMount(async () => {
-		await Promise.all([loadSyncState(), loadTrustedNodes(), loadWsStatus()]);
-		const un = await listenWsPeers();
-		unlisten = un;
-	});
-
-	onDestroy(() => {
-		unlisten?.();
+	// ── data loading on open (idempotent, singleton listener in layout) ───────
+	$effect(() => {
+		if (open) {
+			resetSyncUi();
+			Promise.all([loadSyncState(), loadTrustedNodes(), loadWsStatus()]);
+		}
 	});
 
 	// ── actions ───────────────────────────────────────────────

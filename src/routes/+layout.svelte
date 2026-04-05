@@ -1,14 +1,16 @@
 <script lang="ts">
 	import Dock from '$lib/components/dock/Dock.svelte';
 	import SyncModal from '$lib/components/sync/SyncModal.svelte';
+	import SyncIndicator from '$lib/components/sync/SyncIndicator.svelte';
 	import type { DockItemConfig } from '$lib/components/dock/types';
 	import { applyTheme } from '$lib/theme/apply';
-	import { seedColor } from '$lib/stores/theme';
+	import { seedColor, colorMode } from '$lib/stores/theme';
 	import { inventory } from '$lib/stores/inventory';
 	import { categories } from '$lib/stores/categories';
 	import { preset } from '$lib/stores/preset';
 	import { t } from '$lib/stores/i18n';
-	import { loadSyncState } from '$lib/stores/sync';
+	import { loadSyncState, initSyncListener, trustedNodes, syncWithPeer } from '$lib/stores/sync';
+	import { get } from 'svelte/store';
 	import IconDashboard from '$lib/components/icons/IconDashboard.svelte';
 	import IconInventory from '$lib/components/icons/IconInventory.svelte';
 	import IconAnalytics from '$lib/components/icons/IconAnalytics.svelte';
@@ -22,7 +24,6 @@
 
 	let syncOpen = $state(false);
 
-	// Sync dock item uses a special onClick handler instead of href
 	const dockItems = $derived<DockItemConfig[]>([
 		{ id: 'dashboard',  icon: IconDashboard,  label: $t('nav_dashboard'),  href: '/' },
 		{ id: 'inventory',  icon: IconInventory,  label: $t('nav_inventory'),  href: '/inventory' },
@@ -36,17 +37,36 @@
 		{ id: 'sync',       icon: IconSync,       label: $t('nav_sync'),       onclick: () => (syncOpen = true) },
 	]);
 
+	// Apply theme whenever seed color or mode changes
 	$effect(() => {
 		return seedColor.subscribe((color) => {
-			applyTheme(color);
+			applyTheme(color, $colorMode);
+		});
+	});
+	$effect(() => {
+		return colorMode.subscribe((mode) => {
+			applyTheme($seedColor, mode);
 		});
 	});
 
+	// App init — load stores and set up singleton sync listener
 	$effect(() => {
 		inventory.load();
 		categories.load();
 		preset.load();
 		loadSyncState();
+		initSyncListener();
+	});
+
+	// Auto-sync every 3 minutes with all trusted nodes that have an IP hint
+	$effect(() => {
+		const id = setInterval(async () => {
+			const nodes = get(trustedNodes);
+			for (const n of nodes.filter((x) => x.ip_hint)) {
+				try { await syncWithPeer(n.ip_hint!); } catch { /* silent — indicator handles feedback */ }
+			}
+		}, 3 * 60 * 1000);
+		return () => clearInterval(id);
 	});
 </script>
 
@@ -59,11 +79,12 @@
 </main>
 
 <Dock items={dockItems} />
+<SyncIndicator />
 
 <!-- Glassmorphic Sync Modal -->
 <SyncModal open={syncOpen} onclose={() => (syncOpen = false)} />
 
-<!-- Exsul logo watermark — bottom corner, ultra-transparent -->
+<!-- Exsul logo watermark — bottom corner, ultra-transparent glass text -->
 <div class="logo-watermark" aria-hidden="true">Exsul</div>
 
 <style>
@@ -85,5 +106,10 @@
 		user-select: none;
 		z-index: 999;
 		backdrop-filter: none;
+	}
+
+	/* Light mode: watermark should still be subtle */
+	:global([data-theme="light"]) .logo-watermark {
+		color: rgba(0, 0, 0, 0.06);
 	}
 </style>

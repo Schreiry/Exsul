@@ -132,5 +132,39 @@
   "sync_state_connecting": "Connecting…",
   "sync_state_disconnected": "Disconnected",
   "sync_state_rejected": "Rejected",
-  "sync_merged_events": "events"
+  "sync_merged_events": "events",
+
+  "error_node_id_required": "Node ID is required",
+
+  "label_appearance": "Appearance",
+  "label_dark_mode": "Dark",
+  "label_light_mode": "Light",
+
+  "action_manage_categories": "Categories",
+  "action_new_category": "New Category",
+  "label_category_color": "Color",
+  "label_edit_item": "Edit",
+  "label_order_info": "Order Info",
+  "action_link_order": "Link to Order",
+  "label_margin": "Margin",
+  "label_current_stock": "Current Stock",
+  "label_add_stock": "Add to Stock",
+
+  "sync_syncing": "Syncing…",
+  "sync_synced": "Synced",
+  "sync_failed": "Sync failed",
+
+  "label_business_mode": "Business Mode",
+  "confirm_switch_preset": "Switch to {name}? UI will adapt, data is preserved.",
+  "action_confirm": "Confirm",
+
+  "section_recent_items": "Recent Items",
+  "empty_go_to_inventory": "No items yet. Go to Inventory.",
+  "hint_theme_color": "Seed color generates your entire UI palette.",
+  "hint_backup_description": "Backups are AES-256-GCM encrypted and created automatically on close.",
+
+  "label_total_packs_value": "Pack Value",
+  "label_potential_packs": "Potential Packs",
+  "label_packaged": "Packaged",
+  "label_unpackaged": "Unpackaged"
 }

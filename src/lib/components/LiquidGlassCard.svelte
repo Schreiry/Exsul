@@ -12,9 +12,9 @@
 	let { item, appDataDir = '', onclick }: Props = $props();
 
 	function formatCurrency(value: number): string {
-		return new Intl.NumberFormat('en-US', {
+		return new Intl.NumberFormat('ru-RU', {
 			style: 'currency',
-			currency: 'USD',
+			currency: 'RUB',
 			maximumFractionDigits: 0
 		}).format(value);
 	}
@@ -36,6 +36,7 @@
 
 <div
 	class="glass-card"
+	class:clickable={!!onclick}
 	role={onclick ? 'button' : undefined}
 	tabindex={onclick ? 0 : undefined}
 	{onclick}
@@ -49,38 +50,40 @@
 
 	<div class="card-header">
 		<h3 class="card-title">{item.name}</h3>
-		<span class="card-badge">{item.category}</span>
+		{#if item.category && item.category !== 'uncategorized'}
+			<span class="card-badge">{item.category}</span>
+		{/if}
 	</div>
 
 	<div class="card-metrics">
 		<div class="metric">
 			<span class="mlabel">{$t('table_header_price')}</span>
-			<span class="mvalue accent">{formatCurrency(item.current_price)}</span>
+			<span class="mvalue color-price">{formatCurrency(item.current_price)}</span>
 		</div>
 		<div class="metric">
 			<span class="mlabel">{$t('table_header_stock')}</span>
-			<span class="mvalue">{item.current_stock}</span>
+			<span class="mvalue color-stock">{item.current_stock}</span>
 		</div>
 		<div class="metric">
 			<span class="mlabel">{$t('table_header_sold')}</span>
-			<span class="mvalue">{item.sold_count}</span>
+			<span class="mvalue color-sold">{item.sold_count}</span>
 		</div>
 		<div class="metric">
 			<span class="mlabel">{$t('table_header_revenue')}</span>
-			<span class="mvalue">{formatCurrency(item.revenue)}</span>
+			<span class="mvalue color-revenue">{formatCurrency(item.revenue)}</span>
 		</div>
 		{#if margin !== null}
 			<div class="metric">
-				<span class="mlabel">Margin</span>
-				<span class="mvalue" class:positive={margin >= 0} class:negative={margin < 0}>
+				<span class="mlabel">{$t('label_margin')}</span>
+				<span class="mvalue color-margin">
 					{margin.toFixed(1)}%
 				</span>
 			</div>
 		{/if}
 		{#if item.production_cost > 0}
 			<div class="metric">
-				<span class="mlabel">Cost</span>
-				<span class="mvalue dim">{formatCurrency(item.production_cost)}</span>
+				<span class="mlabel">{$t('label_cost')}</span>
+				<span class="mvalue color-cost">{formatCurrency(item.production_cost)}</span>
 			</div>
 		{/if}
 	</div>
@@ -92,35 +95,28 @@
 <style>
 	.glass-card {
 		position: relative;
-		background: rgba(255, 255, 255, 0.04);
-		backdrop-filter: blur(24px) saturate(180%);
-		-webkit-backdrop-filter: blur(24px) saturate(180%);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-top: 1px solid rgba(255, 255, 255, 0.17);
-		border-left: 1px solid rgba(255, 255, 255, 0.10);
+		background: var(--glass-bg);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		border: 1px solid var(--glass-border);
+		border-top: 1px solid var(--glass-border-top);
 		border-radius: 16px;
 		padding: 16px;
 		overflow: hidden;
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.18),
-			0 8px 32px rgba(0, 0, 0, 0.45),
-			0 2px 8px rgba(0, 0, 0, 0.25);
+		box-shadow: var(--glass-shadow);
 		transition:
-			transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
-			box-shadow 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
-			border-color 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
-			background 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+			transform 0.4s var(--ease-spring),
+			box-shadow 0.4s var(--ease-spring),
+			border-color 0.4s var(--ease-spring),
+			background 0.4s var(--ease-spring);
 	}
+
+	.glass-card.clickable { cursor: pointer; }
 
 	.glass-card:hover {
 		transform: translateY(-4px) scale(1.012);
-		background: rgba(255, 255, 255, 0.06);
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.24),
-			0 24px 60px rgba(0, 0, 0, 0.55),
-			0 8px 20px rgba(0, 0, 0, 0.3);
-		border-top-color: rgba(255, 255, 255, 0.26);
-		border-left-color: rgba(255, 255, 255, 0.15);
+		background: var(--glass-bg-hover);
+		box-shadow: var(--glass-shadow-hover);
 	}
 
 	.glass-card:active {
@@ -142,12 +138,10 @@
 			transparent 70%
 		);
 		pointer-events: none;
-		transition: left 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+		transition: left 0.7s var(--ease-spring);
 	}
 
-	.glass-card:hover .card-shimmer {
-		left: 170%;
-	}
+	.glass-card:hover .card-shimmer { left: 170%; }
 
 	/* Image */
 	.card-image {
@@ -161,12 +155,10 @@
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		transition: transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+		transition: transform 0.55s var(--ease-spring);
 	}
 
-	.glass-card:hover .card-image img {
-		transform: scale(1.06);
-	}
+	.glass-card:hover .card-image img { transform: scale(1.06); }
 
 	/* Header */
 	.card-header {
@@ -180,8 +172,7 @@
 	.card-title {
 		font-size: 1rem;
 		font-weight: 600;
-		color: rgba(255, 255, 255, 0.92);
-		text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+		color: var(--color-on-surface);
 		margin: 0;
 		letter-spacing: -0.01em;
 		flex: 1;
@@ -193,11 +184,11 @@
 	.card-badge {
 		flex-shrink: 0;
 		font-size: 0.67rem;
-		background: rgba(255, 255, 255, 0.07);
-		border: 1px solid rgba(255, 255, 255, 0.10);
+		background: var(--glass-bg-hover);
+		border: 1px solid var(--glass-border);
 		padding: 3px 8px;
 		border-radius: 6px;
-		color: rgba(255, 255, 255, 0.5);
+		color: var(--color-outline);
 		letter-spacing: 0.02em;
 		white-space: nowrap;
 	}
@@ -217,7 +208,7 @@
 
 	.mlabel {
 		font-size: 0.62rem;
-		color: rgba(255, 255, 255, 0.33);
+		color: var(--color-outline);
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		font-weight: 500;
@@ -226,15 +217,14 @@
 	.mvalue {
 		font-size: 0.875rem;
 		font-weight: 600;
-		color: rgba(255, 255, 255, 0.82);
+		color: var(--color-on-surface);
 	}
 
-	.mvalue.accent {
-		color: var(--color-primary, #34d399);
-		text-shadow: 0 0 12px rgba(52, 211, 153, 0.25);
-	}
-
-	.mvalue.positive { color: #34d399; }
-	.mvalue.negative { color: #f87171; }
-	.mvalue.dim { color: rgba(255, 255, 255, 0.45); }
+	/* Color-coded metric values */
+	.color-price   { color: var(--color-primary); text-shadow: 0 0 12px color-mix(in srgb, var(--color-primary) 30%, transparent); }
+	.color-stock   { color: #60a5fa; }
+	.color-sold    { color: #34d399; }
+	.color-revenue { color: #fbbf24; }
+	.color-margin  { color: #a78bfa; }
+	.color-cost    { color: var(--color-outline); }
 </style>

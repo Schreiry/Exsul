@@ -8,10 +8,10 @@ type Translations = Record<string, string>;
 const translations: Record<Locale, Translations> = { en, ru };
 
 function getInitialLocale(): Locale {
-	if (typeof localStorage === 'undefined') return 'en';
+	if (typeof localStorage === 'undefined') return 'ru';
 	const stored = localStorage.getItem('locale');
 	if (stored === 'en' || stored === 'ru') return stored;
-	return 'en';
+	return 'ru';
 }
 
 export const locale = writable<Locale>(getInitialLocale());
