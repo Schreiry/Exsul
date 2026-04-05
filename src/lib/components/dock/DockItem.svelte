@@ -1,0 +1,187 @@
+<script lang="ts">
+	import type { Component } from 'svelte';
+	import type { DockItemConfig } from './types';
+	import { createSpring, DOCK_SPRING } from './spring';
+	import { page } from '$app/state';
+
+	interface Props {
+		config: DockItemConfig;
+		vertical?: boolean;
+		index?: number;
+		draggable?: boolean;
+		ondragmove?: (from: number, to: number) => void;
+	}
+
+	let { config, vertical = false, index = 0, draggable = false, ondragmove }: Props = $props();
+
+	const scale = createSpring(1, DOCK_SPRING);
+	const glow = createSpring(0, DOCK_SPRING);
+
+	let scaleValue = $state(1);
+	let glowValue = $state(0);
+	let pressed = $state(false);
+	let isDragOver = $state(false);
+
+	$effect(() => {
+		return scale.subscribe((v) => (scaleValue = v));
+	});
+
+	$effect(() => {
+		return glow.subscribe((v) => (glowValue = v));
+	});
+
+	let isActive = $derived(page.url.pathname === config.href);
+
+	const IconComponent: Component = config.icon;
+
+	function onPointerEnter() {
+		scale.set(1.15);
+		glow.set(1);
+	}
+
+	function onPointerLeave() {
+		scale.set(1);
+		glow.set(0);
+		pressed = false;
+	}
+
+	function onPointerDown() {
+		scale.set(0.9);
+		pressed = true;
+	}
+
+	function onPointerUp() {
+		if (pressed) {
+			scale.set(1.15);
+		}
+		pressed = false;
+	}
+
+	function onDragStart(e: DragEvent) {
+		if (e.dataTransfer) {
+			e.dataTransfer.setData('text/plain', String(index));
+			e.dataTransfer.effectAllowed = 'move';
+		}
+	}
+
+	function onDragOver(e: DragEvent) {
+		e.preventDefault();
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+		isDragOver = true;
+	}
+
+	function onDragLeave() {
+		isDragOver = false;
+	}
+
+	function onDrop(e: DragEvent) {
+		e.preventDefault();
+		isDragOver = false;
+		const fromIndex = parseInt(e.dataTransfer?.getData('text/plain') ?? '-1', 10);
+		if (fromIndex >= 0 && fromIndex !== index && ondragmove) {
+			ondragmove(fromIndex, index);
+		}
+	}
+
+	function onDragEnd() {
+		isDragOver = false;
+	}
+</script>
+
+<a
+	href={config.href}
+	class="dock-item"
+	class:active={isActive}
+	class:vertical
+	class:drag-over={isDragOver}
+	draggable={draggable ? 'true' : undefined}
+	onpointerenter={onPointerEnter}
+	onpointerleave={onPointerLeave}
+	onpointerdown={onPointerDown}
+	onpointerup={onPointerUp}
+	ondragstart={draggable ? onDragStart : undefined}
+	ondragover={draggable ? onDragOver : undefined}
+	ondragleave={draggable ? onDragLeave : undefined}
+	ondrop={draggable ? onDrop : undefined}
+	ondragend={draggable ? onDragEnd : undefined}
+	style:transform="scale({scaleValue})"
+	style:--glow-opacity={glowValue}
+	aria-label={config.label}
+	title={config.label}
+>
+	<IconComponent />
+	{#if config.badge}
+		<span class="badge">{config.badge}</span>
+	{/if}
+</a>
+
+<style>
+	.dock-item {
+		position: relative;
+		width: 48px;
+		height: 48px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		border-radius: 12px;
+		background: transparent;
+		cursor: pointer;
+		color: var(--dock-fg, #e0e0e0);
+		will-change: transform;
+		-webkit-tap-highlight-color: transparent;
+		text-decoration: none;
+	}
+
+	.dock-item::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		background: var(--dock-item-hover, rgba(255, 255, 255, 0.1));
+		opacity: var(--glow-opacity, 0);
+		transition: opacity 0.1s;
+	}
+
+	.dock-item.drag-over {
+		outline: 2px solid var(--color-primary, #34d399);
+		outline-offset: 2px;
+	}
+
+	.dock-item.active {
+		color: var(--accent, #6ee7b7);
+	}
+
+	.dock-item.active::after {
+		content: '';
+		position: absolute;
+		bottom: 2px;
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		background: var(--accent, #6ee7b7);
+	}
+
+	.vertical.active::after {
+		bottom: auto;
+		right: 2px;
+		left: auto;
+	}
+
+	.badge {
+		position: absolute;
+		top: 2px;
+		right: 2px;
+		min-width: 16px;
+		height: 16px;
+		border-radius: 8px;
+		background: #ef4444;
+		color: white;
+		font-size: 10px;
+		font-weight: 700;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0 4px;
+	}
+</style>

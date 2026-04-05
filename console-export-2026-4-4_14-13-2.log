@@ -1,0 +1,231 @@
+[vite] connecting... client:733:9
+[vite] connected. client:827:12
+Uncaught (in promise) TypeError: can't access property "invoke", window.__TAURI_INTERNALS__ is undefined
+    invoke @tauri-apps_api_core.js:109
+    getItems commands.ts:18
+    load inventory.ts:9
+    _layout +layout.svelte:25
+    update_reaction chunk-TY5SIVJK.js:3945
+    update_effect chunk-TY5SIVJK.js:4084
+    flush_queued_effects chunk-TY5SIVJK.js:3069
+    #process chunk-TY5SIVJK.js:2655
+    flush chunk-TY5SIVJK.js:2759
+    ensure chunk-TY5SIVJK.js:2935
+    run_all chunk-TY5SIVJK.js:42
+    run_micro_tasks chunk-TY5SIVJK.js:714
+    flush_tasks chunk-TY5SIVJK.js:727
+    flushSync chunk-TY5SIVJK.js:3015
+    Svelte4Component chunk-YT4LSJJ5.js:850
+    <anonymous> chunk-YT4LSJJ5.js:799
+    initialize client.js:633
+    navigate client.js:1860
+@tauri-apps_api_core.js:109:3
+Во время загрузки страницы соединение с ws://localhost:5173/?token=IXbPiGMUzIoU было прервано. client:745:27
+[vite] server connection lost. Polling for restart... client:865:14
+[vite] connected from window eaad72fc-056c-47fd-8c95-9c5de8b622ec:67:11
+[vite] new window visibility visible eaad72fc-056c-47fd-8c95-9c5de8b622ec:63:12
+Загрузка модуля по адресу «http://localhost:5173/.svelte-kit/generated/client/nodes/4.js» не удалась. app.js
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/4.js app.js:22:41
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/4.js app.js:22:41
+Preloading data for /inventory failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info 2 client.js:3324:15
+Загрузка модуля по адресу «http://localhost:5173/.svelte-kit/generated/client/nodes/3.js» не удалась. app.js
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/3.js app.js:22:41
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/3.js app.js:22:41
+Preloading data for /analytics failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info 2 client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/3.js
+    nodes app.js:7
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+app.js:22:41
+Preloading data for /analytics failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/4.js
+    nodes app.js:8
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+app.js:22:41
+Preloading data for /inventory failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/4.js
+    nodes app.js:8
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    navigate client.js:1662
+app.js:22:41
+Загрузка модуля по адресу «http://localhost:5173/.svelte-kit/generated/client/nodes/5.js» не удалась. app.js
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/5.js app.js:22:41
+Preloading data for /settings failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/3.js
+    nodes app.js:7
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+app.js:22:41
+Preloading data for /analytics failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/3.js
+    nodes app.js:7
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    navigate client.js:1662
+app.js:22:41
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/5.js
+    nodes app.js:9
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+app.js:22:41
+Preloading data for /settings failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/5.js
+    nodes app.js:9
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    navigate client.js:1662
+app.js:22:41
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/4.js
+    nodes app.js:8
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+app.js:22:41
+Preloading data for /inventory failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/4.js
+    nodes app.js:8
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    navigate client.js:1662
+app.js:22:41
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/3.js
+    nodes app.js:7
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+app.js:22:41
+Preloading data for /analytics failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/3.js
+    nodes app.js:7
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    navigate client.js:1662
+app.js:22:41
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/5.js
+    nodes app.js:9
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+app.js:22:41
+Preloading data for /settings failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/5.js
+    nodes app.js:9
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    navigate client.js:1662
+app.js:22:41
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/3.js
+    nodes app.js:7
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+    mousemove_timeout client.js:1990
+    setTimeout handler*setup_preload/< client.js:1989
+app.js:22:41
+Preloading data for /analytics failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/4.js
+    nodes app.js:8
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+    mousemove_timeout client.js:1990
+    setTimeout handler*setup_preload/< client.js:1989
+app.js:22:41
+Preloading data for /inventory failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/3.js
+    nodes app.js:7
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+    mousemove_timeout client.js:1990
+    setTimeout handler*setup_preload/< client.js:1989
+app.js:22:41
+Preloading data for /analytics failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+The next HMR update will cause the page to reload client.js:3324:15
+TypeError: error loading dynamically imported module: http://localhost:5173/.svelte-kit/generated/client/nodes/5.js
+    nodes app.js:9
+    load_node client.js:840
+    branch_promises client.js:1213
+    load_route client.js:1184
+    _preload_data client.js:556
+    preload client.js:2045
+    mousemove_timeout client.js:1990
+    setTimeout handler*setup_preload/< client.js:1989
+app.js:22:41
+Preloading data for /settings failed with the following error: Internal Error
+If this error is transient, you can ignore it. Otherwise, consider disabling preloading for this route. This route was preloaded due to a data-sveltekit-preload-data attribute. See https://svelte.dev/docs/kit/link-options for more info client.js:3324:15
+Ошибка карты кода: Error: NetworkError when attempting to fetch resource.
+URL ресурса: http://localhost:5173/node_modules/.vite/deps/chunk-TY5SIVJK.js?v=b9fbac29
+URL карты кода: chunk-TY5SIVJK.js.map
+Ошибка карты кода: Error: NetworkError when attempting to fetch resource.
+URL ресурса: http://localhost:5173/node_modules/.vite/deps/chunk-YT4LSJJ5.js?v=b9fbac29
+URL карты кода: chunk-YT4LSJJ5.js.map
+Ошибка карты кода: Error: NetworkError when attempting to fetch resource.
+URL ресурса: http://localhost:5173/node_modules/.vite/deps/@tauri-apps_api_core.js?v=b9fbac29
+URL карты кода: @tauri-apps_api_core.js.map

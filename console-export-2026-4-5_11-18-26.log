@@ -1,0 +1,51 @@
+[vite] connecting... client:733:9
+[vite] connected. client:827:12
+Uncaught (in promise) TypeError: can't access property "invoke", window.__TAURI_INTERNALS__ is undefined
+    invoke @tauri-apps_api_core.js:109
+    getItems commands.ts:18
+    load inventory.ts:9
+    _layout +layout.svelte:25
+    update_reaction chunk-TY5SIVJK.js:3945
+    update_effect chunk-TY5SIVJK.js:4084
+    flush_queued_effects chunk-TY5SIVJK.js:3069
+    #process chunk-TY5SIVJK.js:2655
+    flush chunk-TY5SIVJK.js:2759
+    ensure chunk-TY5SIVJK.js:2935
+    run_all chunk-TY5SIVJK.js:42
+    run_micro_tasks chunk-TY5SIVJK.js:714
+    flush_tasks chunk-TY5SIVJK.js:727
+    flushSync chunk-TY5SIVJK.js:3015
+    Svelte4Component chunk-YT4LSJJ5.js:850
+    <anonymous> chunk-YT4LSJJ5.js:799
+    initialize client.js:633
+    navigate client.js:1860
+@tauri-apps_api_core.js:109:3
+Uncaught (in promise) TypeError: can't access property "invoke", window.__TAURI_INTERNALS__ is undefined
+    invoke @tauri-apps_api_core.js:109
+    getNodeId commands.ts:31
+    loadSyncState sync.ts:11
+    _page +page.svelte:14
+    update_reaction chunk-TY5SIVJK.js:3945
+    update_effect chunk-TY5SIVJK.js:4084
+    flush_queued_effects chunk-TY5SIVJK.js:3069
+    #process chunk-TY5SIVJK.js:2655
+    flush chunk-TY5SIVJK.js:2759
+    ensure chunk-TY5SIVJK.js:2935
+    run_all chunk-TY5SIVJK.js:42
+    run_micro_tasks chunk-TY5SIVJK.js:714
+    queue_micro_task chunk-TY5SIVJK.js:720
+@tauri-apps_api_core.js:109:3
+Во время загрузки страницы соединение с ws://localhost:5173/?token=y1rq-mw7dH4c было прервано. client:745:27
+[vite] server connection lost. Polling for restart... client:865:14
+[vite] connected from window 83c36456-f7a0-4826-b36f-b135f243d7ec:67:11
+[vite] new window visibility visible 83c36456-f7a0-4826-b36f-b135f243d7ec:63:12
+Uncaught (in promise) TypeError: can't access property "invoke", window.__TAURI_INTERNALS__ is undefined
+    invoke @tauri-apps_api_core.js:109
+    addItem commands.ts:16
+    addItem inventory.ts:18
+    handleSubmit +page.svelte:33
+    submit +page.svelte:53
+    target_handler chunk-DSSJOGTL.js:42
+    without_reactive_context chunk-TY5SIVJK.js:3348
+    target_handler chunk-DSSJOGTL.js:41
+7 @tauri-apps_api_core.js:109:3
