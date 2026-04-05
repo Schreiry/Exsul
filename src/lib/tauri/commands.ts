@@ -1,22 +1,30 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
 	AddOrderItemPayload,
+	AddTrustedNodePayload,
 	AdjustStockPayload,
+	AppPreset,
 	AuditLog,
 	AuditLogFilter,
 	Category,
 	ChangePricePayload,
 	CreateCategoryPayload,
+	CreateFlowerSortPayload,
 	CreateItemPayload,
 	CreateOrderPayload,
 	EventRecord,
+	FlowerConstants,
+	FlowerSort,
 	Item,
 	Order,
 	PriceRecord,
 	RecordSalePayload,
 	SyncPeer,
+	TrustedNode,
 	UpdateCategoryPayload,
+	UpdateFlowerSortPayload,
 	UpdateItemPayload,
+	WsServerStatus,
 } from './types';
 
 // ============================================================
@@ -267,4 +275,35 @@ export const commands = {
 	// Audit
 	getAuditLogs: (filter?: AuditLogFilter) =>
 		safeInvoke<AuditLog[]>('get_audit_logs', { filter }),
+
+	// App Preset
+	getAppPreset: () => safeInvoke<AppPreset>('get_app_preset'),
+	setAppPreset: (preset: AppPreset) => safeInvoke<void>('set_app_preset', { preset }),
+
+	// Trusted Nodes
+	getTrustedNodes: () => safeInvoke<TrustedNode[]>('get_trusted_nodes'),
+	addTrustedNode: (payload: AddTrustedNodePayload) =>
+		safeInvoke<void>('add_trusted_node', { payload }),
+	removeTrustedNode: (nodeId: string) =>
+		safeInvoke<void>('remove_trusted_node', { nodeId }),
+
+	// Flower Sorts
+	getFlowerSorts: () => safeInvoke<FlowerSort[]>('get_flower_sorts'),
+	createFlowerSort: (payload: CreateFlowerSortPayload) =>
+		safeInvoke<string>('create_flower_sort', { payload }),
+	updateFlowerSort: (payload: UpdateFlowerSortPayload) =>
+		safeInvoke<void>('update_flower_sort', { payload }),
+	deleteFlowerSort: (id: string) => safeInvoke<void>('delete_flower_sort', { id }),
+	adjustFlowerStock: (id: string, rawDelta: number, pkgDelta: number) =>
+		safeInvoke<void>('adjust_flower_stock', { id, rawDelta, pkgDelta }),
+
+	// Flower Constants
+	getFlowerConstants: () => safeInvoke<FlowerConstants>('get_flower_constants'),
+	setFlowerConstants: (constants: FlowerConstants) =>
+		safeInvoke<void>('set_flower_constants', { constants }),
+
+	// WebSocket P2P
+	startWsServer: () => safeInvoke<void>('start_ws_server'),
+	wsConnectPeer: (targetIp: string) => safeInvoke<number>('ws_connect_peer', { targetIp }),
+	getWsStatus: () => safeInvoke<WsServerStatus>('get_ws_status'),
 } as const;

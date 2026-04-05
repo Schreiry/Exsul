@@ -4,7 +4,8 @@ export interface DockItemConfig {
 	id: string;
 	icon: Component;
 	label: string;
-	href: string;
+	href?: string;
+	onclick?: () => void;
 	badge?: number | string;
 }
 
