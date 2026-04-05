@@ -8,6 +8,7 @@
 		totalPacks,
 		sortsBySpecies,
 	} from '$lib/stores/flowers';
+	import { t } from '$lib/stores/i18n';
 	import type { FlowerSort, FlowerConstants, UpdateFlowerSortPayload } from '$lib/tauri/types';
 
 	// ── Local state ───────────────────────────────────────────
@@ -87,7 +88,7 @@
 	<!-- ═══════════════════════════════════════════════════════ -->
 	<div class="constants-island glass">
 		<div class="island-header">
-			<span class="island-title">Константы</span>
+			<span class="island-title">{$t('flowers_constants')}</span>
 			{#if !constantsEditing}
 				<button class="island-edit-btn" onclick={() => (constantsEditing = true)}>✎</button>
 			{/if}
@@ -96,42 +97,42 @@
 		{#if constantsEditing}
 			<div class="constants-grid editing">
 				<label class="const-label">
-					Вес/стебель (кг)
+					{$t('flowers_weight_per_flower')}
 					<input class="glass-input" type="number" step="0.001" bind:value={constantsDraft.weight_per_flower} />
 				</label>
 				<label class="const-label">
-					Стеблей/упак.
+					{$t('flowers_per_pack')}
 					<input class="glass-input" type="number" step="1" bind:value={constantsDraft.flowers_per_pack} />
 				</label>
 				<label class="const-label">
-					Цена упак. (₽)
+					{$t('flowers_price_per_pack')}
 					<input class="glass-input" type="number" step="10" bind:value={constantsDraft.price_per_pack} />
 				</label>
 				<label class="const-label">
-					Цена/стебель (₽)
+					{$t('flowers_price_per_flower')}
 					<input class="glass-input" type="number" step="1" bind:value={constantsDraft.price_per_flower} />
 				</label>
 			</div>
 			<div class="island-actions">
-				<button class="glass-btn accent" onclick={handleSaveConstants}>Сохранить</button>
-				<button class="glass-btn" onclick={() => { constantsEditing = false; constantsDraft = { ...$flowerConstants }; }}>Отмена</button>
+				<button class="glass-btn accent" onclick={handleSaveConstants}>{$t('action_save')}</button>
+				<button class="glass-btn" onclick={() => { constantsEditing = false; constantsDraft = { ...$flowerConstants }; }}>{$t('action_cancel')}</button>
 			</div>
 		{:else}
 			<div class="constants-grid">
 				<div class="const-item">
-					<span class="const-key">Вес/стебель</span>
+					<span class="const-key">{$t('flowers_weight_per_flower')}</span>
 					<span class="const-val badge purple">{$flowerConstants.weight_per_flower} кг</span>
 				</div>
 				<div class="const-item">
-					<span class="const-key">Стеблей/уп.</span>
+					<span class="const-key">{$t('flowers_per_pack')}</span>
 					<span class="const-val badge blue">{$flowerConstants.flowers_per_pack}</span>
 				</div>
 				<div class="const-item">
-					<span class="const-key">Цена уп.</span>
+					<span class="const-key">{$t('flowers_price_per_pack')}</span>
 					<span class="const-val badge green">{fmtMoney($flowerConstants.price_per_pack)}</span>
 				</div>
 				<div class="const-item">
-					<span class="const-key">Цена/стеб.</span>
+					<span class="const-key">{$t('flowers_price_per_flower')}</span>
 					<span class="const-val badge amber">{fmtMoney($flowerConstants.price_per_flower)}</span>
 				</div>
 			</div>
@@ -142,8 +143,8 @@
 	<!-- HEADER + AGGREGATE STATS                                -->
 	<!-- ═══════════════════════════════════════════════════════ -->
 	<div class="page-header">
-		<h1 class="page-title">Цветы</h1>
-		<p class="page-sub">Склад и аналитика</p>
+		<h1 class="page-title">{$t('page_flowers_title')}</h1>
+		<p class="page-sub">{$t('page_flowers_subtitle')}</p>
 	</div>
 
 	<!-- KPI strip -->
@@ -151,27 +152,27 @@
 		<div class="kpi glass">
 			<span class="kpi-icon">🌸</span>
 			<span class="kpi-val">{$totalRawStems}</span>
-			<span class="kpi-label">Сырых стеблей</span>
+			<span class="kpi-label">{$t('flowers_raw_stock')}</span>
 		</div>
 		<div class="kpi glass">
 			<span class="kpi-icon">📦</span>
 			<span class="kpi-val">{$totalPacks}</span>
-			<span class="kpi-label">Упаковок готово</span>
+			<span class="kpi-label">{$t('flowers_total_packs')}</span>
 		</div>
 		<div class="kpi glass">
 			<span class="kpi-icon">⚖️</span>
 			<span class="kpi-val">{fmtWeight($flowerFinancials.totalWeight)}</span>
-			<span class="kpi-label">Общий вес</span>
+			<span class="kpi-label">{$t('flowers_total_weight')}</span>
 		</div>
 		<div class="kpi glass accent">
 			<span class="kpi-icon">💰</span>
 			<span class="kpi-val">{fmtMoney($flowerFinancials.totalValue)}</span>
-			<span class="kpi-label">Общая стоимость</span>
+			<span class="kpi-label">{$t('flowers_total_value')}</span>
 		</div>
 		<div class="kpi glass">
 			<span class="kpi-icon">🎁</span>
 			<span class="kpi-val">{$flowerFinancials.potentialPacks}</span>
-			<span class="kpi-label">Потенц. упаковок</span>
+			<span class="kpi-label">{$t('flowers_potential_packs')}</span>
 		</div>
 	</div>
 
@@ -180,7 +181,7 @@
 	<!-- ═══════════════════════════════════════════════════════ -->
 	<div class="view-controls">
 		<div class="view-tabs">
-			{#each [['all', 'Все'], ['raw', 'Сырьё'], ['packaged', 'Упакованные']] as [v, label]}
+			{#each [['all', $t('flowers_all')], ['raw', $t('flowers_raw_stock')], ['packaged', $t('flowers_packaged')]] as [v, label]}
 				<button
 					class="view-tab"
 					class:active={view === v}
@@ -192,7 +193,7 @@
 		</div>
 
 		<button class="add-btn glass-btn accent" onclick={() => (showAddForm = !showAddForm)}>
-			{showAddForm ? '✕ Отмена' : '+ Добавить сорт'}
+			{showAddForm ? `✕ ${$t('action_cancel')}` : `+ ${$t('flowers_add_sort')}`}
 		</button>
 	</div>
 
@@ -216,7 +217,7 @@
 			<!-- LEFT: Raw / Сырьё -->
 			<div class="split-panel">
 				<div class="panel-header">
-					<span class="panel-badge raw">Сырьё (стебли)</span>
+					<span class="panel-badge raw">{$t('flowers_raw_stock')}</span>
 					<span class="panel-total">{$totalRawStems} шт</span>
 				</div>
 				<div class="sort-list">
@@ -244,7 +245,7 @@
 			<!-- RIGHT: Packaged / Упакованные -->
 			<div class="split-panel">
 				<div class="panel-header">
-					<span class="panel-badge pkg">Упакованные</span>
+					<span class="panel-badge pkg">{$t('flowers_packaged')}</span>
 					<span class="panel-total">{$totalPacks} уп. · {fmtMoney($flowerFinancials.packValue)}</span>
 				</div>
 				<div class="sort-list">

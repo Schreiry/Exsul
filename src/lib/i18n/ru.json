@@ -132,5 +132,39 @@
   "sync_state_connecting": "Соединение…",
   "sync_state_disconnected": "Отключён",
   "sync_state_rejected": "Отклонён",
-  "sync_merged_events": "событий"
+  "sync_merged_events": "событий",
+
+  "error_node_id_required": "ID узла обязателен",
+
+  "label_appearance": "Оформление",
+  "label_dark_mode": "Тёмная",
+  "label_light_mode": "Светлая",
+
+  "action_manage_categories": "Категории",
+  "action_new_category": "Новая категория",
+  "label_category_color": "Цвет",
+  "label_edit_item": "Редактировать",
+  "label_order_info": "Информация о заказе",
+  "action_link_order": "Привязать к заказу",
+  "label_margin": "Маржа",
+  "label_current_stock": "Текущий остаток",
+  "label_add_stock": "Добавить к остатку",
+
+  "sync_syncing": "Синхронизация…",
+  "sync_synced": "Синхронизовано",
+  "sync_failed": "Ошибка синхронизации",
+
+  "label_business_mode": "Режим бизнеса",
+  "confirm_switch_preset": "Переключить на {name}? UI адаптируется, данные сохранятся.",
+  "action_confirm": "Подтвердить",
+
+  "section_recent_items": "Недавние товары",
+  "empty_go_to_inventory": "Товаров нет. Перейдите на Склад.",
+  "hint_theme_color": "Основной цвет генерирует всю палитру интерфейса.",
+  "hint_backup_description": "Резервные копии шифруются AES-256-GCM и создаются автоматически при закрытии.",
+
+  "label_total_packs_value": "Стоимость упаковок",
+  "label_potential_packs": "Потенциальных упаковок",
+  "label_packaged": "Упаковано",
+  "label_unpackaged": "Неупаковано"
 }

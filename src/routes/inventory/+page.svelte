@@ -4,9 +4,13 @@
 	import { t } from '$lib/stores/i18n';
 	import { commands } from '$lib/tauri/commands';
 	import LiquidGlassCard from '$lib/components/LiquidGlassCard.svelte';
-	import type { CreateItemPayload } from '$lib/tauri/types';
+	import ItemDetailModal from '$lib/components/inventory/ItemDetailModal.svelte';
+	import type { CreateItemPayload, Item, Category } from '$lib/tauri/types';
 
 	let showForm = $state(false);
+	let showCategoryManager = $state(false);
+	let selectedItem = $state<Item | null>(null);
+
 	let formData = $state<CreateItemPayload>({
 		name: '',
 		category: '',
@@ -45,20 +49,44 @@
 		})
 	);
 
+	// ── Category manager state ─────────────────────────────────
+	let newCatName = $state('');
+	let newCatColor = $state('#34d399');
+	let editingCatId = $state<string | null>(null);
+	let editingCatName = $state('');
+	let editingCatColor = $state('');
+
+	async function handleCreateCategory() {
+		if (!newCatName.trim()) return;
+		await categories.create({ name: newCatName.trim(), color: newCatColor });
+		newCatName = '';
+		newCatColor = '#34d399';
+	}
+
+	function startEditCat(cat: Category) {
+		editingCatId = cat.id;
+		editingCatName = cat.name;
+		editingCatColor = cat.color ?? '#34d399';
+	}
+
+	async function handleSaveCategory() {
+		if (!editingCatId) return;
+		await categories.update({ id: editingCatId, name: editingCatName.trim() || undefined, color: editingCatColor });
+		editingCatId = null;
+	}
+
+	async function handleDeleteCategory(id: string) {
+		await categories.remove(id);
+	}
+
+	// ── Item form ──────────────────────────────────────────────
 	function handleImageDrop(e: DragEvent) {
 		e.preventDefault();
 		isDragOver = false;
 		const file = e.dataTransfer?.files?.[0];
 		if (!file || !file.type.startsWith('image/')) return;
-		if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5 MB'); return; }
-		const reader = new FileReader();
-		reader.onload = (ev) => {
-			const dataUrl = ev.target?.result as string;
-			previewUrl = dataUrl;
-			const comma = dataUrl.indexOf(',');
-			pendingImageBase64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-		};
-		reader.readAsDataURL(file);
+		if (file.size > 5 * 1024 * 1024) return;
+		readImageFile(file);
 	}
 
 	function handleImageClick() {
@@ -67,18 +95,20 @@
 		input.accept = 'image/*';
 		input.onchange = (e) => {
 			const file = (e.target as HTMLInputElement).files?.[0];
-			if (!file) return;
-			if (file.size > 5 * 1024 * 1024) { alert('Image must be under 5 MB'); return; }
-			const reader = new FileReader();
-			reader.onload = (ev) => {
-				const dataUrl = ev.target?.result as string;
-				previewUrl = dataUrl;
-				const comma = dataUrl.indexOf(',');
-				pendingImageBase64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-			};
-			reader.readAsDataURL(file);
+			if (file && file.size <= 5 * 1024 * 1024) readImageFile(file);
 		};
 		input.click();
+	}
+
+	function readImageFile(file: File) {
+		const reader = new FileReader();
+		reader.onload = (ev) => {
+			const dataUrl = ev.target?.result as string;
+			previewUrl = dataUrl;
+			const comma = dataUrl.indexOf(',');
+			pendingImageBase64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+		};
+		reader.readAsDataURL(file);
 	}
 
 	function onCategorySelect(e: Event) {
@@ -116,11 +146,67 @@
 <div class="inventory-page">
 	<div class="header">
 		<h1>{$t('page_inventory_title')}</h1>
-		<button class="btn-primary" onclick={() => (showForm = !showForm)}>
-			{showForm ? $t('action_cancel') : $t('action_add_item')}
-		</button>
+		<div class="header-actions">
+			<button
+				class="btn-secondary"
+				onclick={() => { showCategoryManager = !showCategoryManager; showForm = false; }}
+			>
+				{$t('action_manage_categories')}
+			</button>
+			<button class="btn-primary" onclick={() => { showForm = !showForm; showCategoryManager = false; }}>
+				{showForm ? $t('action_cancel') : $t('action_add_item')}
+			</button>
+		</div>
 	</div>
 
+	<!-- ── Category Manager ────────────────────────────────────── -->
+	{#if showCategoryManager}
+		<div class="cat-panel">
+			<div class="cat-panel-title">{$t('action_manage_categories')}</div>
+
+			{#if $categories.length === 0}
+				<p class="empty-hint">{$t('empty_no_categories')}</p>
+			{:else}
+				<div class="cat-list">
+					{#each $categories as cat (cat.id)}
+						{#if editingCatId === cat.id}
+							<!-- Inline edit row -->
+							<div class="cat-row editing">
+								<input type="color" class="cat-color-swatch" bind:value={editingCatColor} />
+								<input class="cat-name-input" type="text" bind:value={editingCatName} />
+								<button class="cat-action-btn save" onclick={handleSaveCategory}>✓</button>
+								<button class="cat-action-btn" onclick={() => (editingCatId = null)}>✕</button>
+							</div>
+						{:else}
+							<div class="cat-row">
+								<span class="cat-color-dot" style:background={cat.color ?? 'var(--color-outline)'}></span>
+								<span class="cat-name">{cat.name}</span>
+								<button class="cat-action-btn" onclick={() => startEditCat(cat)} aria-label="Редактировать">✎</button>
+								<button class="cat-action-btn danger" onclick={() => handleDeleteCategory(cat.id)} aria-label="Удалить">✕</button>
+							</div>
+						{/if}
+					{/each}
+				</div>
+			{/if}
+
+			<!-- Add new category form -->
+			<div class="cat-add-form">
+				<input type="color" class="cat-color-swatch" bind:value={newCatColor} title={$t('label_category_color')} />
+				<input
+					class="cat-name-input"
+					type="text"
+					placeholder={$t('action_new_category')}
+					bind:value={newCatName}
+					onkeydown={(e) => e.key === 'Enter' && handleCreateCategory()}
+				/>
+				<button class="btn-secondary" onclick={handleCreateCategory} disabled={!newCatName.trim()}>
+					{$t('action_save')}
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	<!-- ── Item creation form ──────────────────────────────────── -->
 	{#if showForm}
 		<form class="item-form" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
 			<div class="form-grid">
@@ -200,12 +286,15 @@
 
 	<div class="items-grid">
 		{#each filteredItems as item (item.id)}
-			<LiquidGlassCard {item} appDataDir={appDataDirPath} />
+			<LiquidGlassCard {item} appDataDir={appDataDirPath} onclick={() => (selectedItem = item)} />
 		{:else}
 			<div class="empty-state">{$t('empty_no_items')}</div>
 		{/each}
 	</div>
 </div>
+
+<!-- Item detail modal -->
+<ItemDetailModal item={selectedItem} onclose={() => (selectedItem = null)} appDataDir={appDataDirPath} />
 
 <style>
 	.inventory-page { max-width: 1000px; margin: 0 auto; }
@@ -220,10 +309,12 @@
 	.header h1 {
 		font-size: 1.5rem;
 		font-weight: 600;
-		color: rgba(255, 255, 255, 0.92);
+		color: var(--color-on-surface);
 		margin: 0;
 		letter-spacing: -0.02em;
 	}
+
+	.header-actions { display: flex; gap: 10px; align-items: center; }
 
 	.btn-primary {
 		background: linear-gradient(135deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 70%, var(--color-secondary)));
@@ -235,26 +326,135 @@
 		cursor: pointer;
 		font-size: 0.875rem;
 		transition: opacity 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
-		letter-spacing: 0.01em;
 	}
 
 	.btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
 	.btn-primary:active { transform: translateY(0); }
 	.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
 
-	/* ── Form ── */
+	.btn-secondary {
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		color: var(--color-on-surface);
+		padding: 8px 16px;
+		border-radius: 10px;
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.btn-secondary:hover { background: var(--glass-bg-hover); }
+	.btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+	/* ── Category manager ── */
+	.cat-panel {
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
+		border-radius: 14px;
+		padding: 18px;
+		margin-bottom: 20px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+
+	.cat-panel-title {
+		font-size: 0.72rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-outline);
+	}
+
+	.cat-list { display: flex; flex-direction: column; gap: 6px; }
+
+	.cat-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 10px;
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		border-radius: 9px;
+	}
+
+	.cat-color-dot {
+		width: 14px;
+		height: 14px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+
+	.cat-color-swatch {
+		width: 28px;
+		height: 28px;
+		border: none;
+		border-radius: 7px;
+		cursor: pointer;
+		background: transparent;
+		flex-shrink: 0;
+		padding: 0;
+	}
+
+	.cat-color-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+	.cat-color-swatch::-webkit-color-swatch { border-radius: 6px; border: 1px solid var(--glass-border); }
+
+	.cat-name {
+		flex: 1;
+		font-size: 0.875rem;
+		color: var(--color-on-surface);
+	}
+
+	.cat-name-input {
+		flex: 1;
+		background: var(--glass-bg-hover);
+		border: 1px solid var(--color-primary);
+		border-radius: 7px;
+		padding: 5px 9px;
+		color: var(--color-on-surface);
+		font-size: 0.875rem;
+		font-family: inherit;
+		outline: none;
+	}
+
+	.cat-action-btn {
+		background: none;
+		border: none;
+		color: var(--color-outline);
+		cursor: pointer;
+		padding: 4px 7px;
+		border-radius: 6px;
+		font-size: 0.82rem;
+		transition: color 0.15s, background 0.15s;
+	}
+
+	.cat-action-btn:hover { background: var(--glass-bg-hover); color: var(--color-on-surface); }
+	.cat-action-btn.danger:hover { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+	.cat-action-btn.save { color: #34d399; }
+	.cat-action-btn.save:hover { background: rgba(52, 211, 153, 0.1); }
+
+	.cat-add-form {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding-top: 4px;
+		border-top: 1px solid var(--glass-border);
+	}
+
+	.empty-hint { font-size: 0.82rem; color: var(--color-outline); font-style: italic; }
+
+	/* ── Item form ── */
 	.item-form {
-		background: rgba(255, 255, 255, 0.03);
-		backdrop-filter: blur(16px) saturate(160%);
-		-webkit-backdrop-filter: blur(16px) saturate(160%);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-top-color: rgba(255, 255, 255, 0.14);
+		background: var(--glass-bg);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
 		border-radius: 16px;
 		padding: 20px;
 		margin-bottom: 24px;
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.09),
-			0 4px 20px rgba(0, 0, 0, 0.35);
+		box-shadow: var(--glass-shadow);
 	}
 
 	.form-grid {
@@ -273,7 +473,7 @@
 
 	.form-field label {
 		font-size: 0.7rem;
-		color: rgba(255, 255, 255, 0.4);
+		color: var(--color-outline);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 		font-weight: 500;
@@ -281,89 +481,64 @@
 
 	.form-field input,
 	.form-field select {
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.10);
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
 		border-radius: 8px;
 		padding: 8px 12px;
-		color: rgba(255, 255, 255, 0.88);
+		color: var(--color-on-surface);
 		font-size: 0.875rem;
 		font-family: inherit;
 		outline: none;
-		transition:
-			border-color 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
-			background 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+		transition: border-color 0.2s;
 	}
 
 	.form-field input:focus,
-	.form-field select:focus {
-		border-color: rgba(52, 211, 153, 0.5);
-		background: rgba(255, 255, 255, 0.07);
-	}
+	.form-field select:focus { border-color: var(--color-primary); }
 
 	/* ── Dropzone ── */
 	.dropzone {
-		border: 1px dashed rgba(255, 255, 255, 0.18);
+		border: 1px dashed var(--color-outline);
 		border-radius: 10px;
 		padding: 20px;
 		text-align: center;
 		cursor: pointer;
-		transition:
-			border-color 0.3s var(--ease-spring),
-			background 0.3s var(--ease-spring);
+		transition: border-color 0.2s, background 0.2s;
 		min-height: 80px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 	}
 
-	.dropzone.active {
-		border-color: rgba(52, 211, 153, 0.6);
-		background: rgba(52, 211, 153, 0.06);
-	}
+	.dropzone.active { border-color: var(--color-primary); background: rgba(52, 211, 153, 0.05); }
 
-	.dropzone-hint {
-		font-size: 0.8rem;
-		color: rgba(255, 255, 255, 0.35);
-	}
+	.dropzone-hint { font-size: 0.8rem; color: var(--color-outline); }
 
-	.preview-thumbnail {
-		max-width: 100%;
-		max-height: 120px;
-		border-radius: 6px;
-		object-fit: contain;
-	}
+	.preview-thumbnail { max-width: 100%; max-height: 120px; border-radius: 6px; object-fit: contain; }
 
 	/* ── Filters ── */
-	.filters {
-		display: flex;
-		gap: 10px;
-		margin-bottom: 20px;
-	}
+	.filters { display: flex; gap: 10px; margin-bottom: 20px; }
 
 	.search-input {
 		flex: 1;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.09);
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
 		border-radius: 10px;
 		padding: 8px 14px;
-		color: rgba(255, 255, 255, 0.88);
+		color: var(--color-on-surface);
 		font-size: 0.875rem;
 		outline: none;
-		transition: border-color 0.3s var(--ease-spring), background 0.3s;
+		transition: border-color 0.2s;
 		font-family: inherit;
 	}
 
-	.search-input:focus {
-		border-color: rgba(52, 211, 153, 0.4);
-		background: rgba(255, 255, 255, 0.06);
-	}
+	.search-input:focus { border-color: var(--color-primary); }
 
 	.category-filter {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.09);
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
 		border-radius: 10px;
 		padding: 8px 14px;
-		color: rgba(255, 255, 255, 0.88);
+		color: var(--color-on-surface);
 		font-size: 0.875rem;
 		min-width: 160px;
 		font-family: inherit;
@@ -381,7 +556,7 @@
 		grid-column: 1 / -1;
 		text-align: center;
 		padding: 56px;
-		color: rgba(255, 255, 255, 0.25);
+		color: var(--color-outline);
 		font-size: 0.9rem;
 	}
 </style>

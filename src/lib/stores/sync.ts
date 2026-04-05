@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import { listen } from '@tauri-apps/api/event';
 import { commands } from '$lib/tauri/commands';
 import type { SyncPeer, WsPeerStatus, WsServerStatus, TrustedNode } from '$lib/tauri/types';
@@ -17,6 +17,32 @@ export const trustedNodes = writable<TrustedNode[]>([]);
 
 // Status message for the sync modal
 export const syncMessage = writable<string>('');
+
+// ── Singleton peer listener ───────────────────────────────────────────────────
+// Lifted out of SyncModal lifecycle so it survives open/close cycles.
+let _listenerInit = false;
+let _peerUnlisten: (() => void) | undefined;
+
+/** Call once from the app layout. Safe to call multiple times (no-op after first). */
+export async function initSyncListener() {
+	if (_listenerInit) return;
+	_listenerInit = true;
+	_peerUnlisten = await listen<WsPeerStatus[]>('sync://peers-updated', (event) => {
+		wsPeers.set(event.payload);
+	});
+}
+
+/** Reset UI-only state when the sync modal is opened, so stale messages don't show. */
+export function resetSyncUi() {
+	syncStatus.set('idle');
+	syncMessage.set('');
+}
+
+/** Clear sync status back to idle (call after indicator auto-dismiss timeout). */
+export function clearSyncStatus() {
+	syncStatus.set('idle');
+	syncMessage.set('');
+}
 
 export async function loadSyncState() {
 	const [id, peers] = await Promise.all([
@@ -65,7 +91,7 @@ export async function syncWithPeer(ip: string): Promise<number> {
 	}
 }
 
-/** Subscribe to live peer-update events emitted by the Rust WS layer. */
+/** @deprecated Use initSyncListener() in layout instead. Kept for compatibility. */
 export function listenWsPeers() {
 	return listen<WsPeerStatus[]>('sync://peers-updated', (event) => {
 		wsPeers.set(event.payload);
