@@ -163,6 +163,11 @@
   "hint_theme_color": "Seed color generates your entire UI palette.",
   "hint_backup_description": "Backups are AES-256-GCM encrypted and created automatically on close.",
 
+  "label_currency": "Currency",
+  "label_global_currency": "Global Currency",
+  "label_item_currency": "Item Currency",
+  "hint_currency": "Default currency for displaying prices. Can be set individually per item.",
+
   "label_total_packs_value": "Pack Value",
   "label_potential_packs": "Potential Packs",
   "label_packaged": "Packaged",

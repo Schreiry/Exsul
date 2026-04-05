@@ -6,6 +6,7 @@
 	import { inventory } from '$lib/stores/inventory';
 	import { categories } from '$lib/stores/categories';
 	import { commands } from '$lib/tauri/commands';
+	import { globalCurrency, CURRENCIES } from '$lib/stores/currency';
 	import type { AppPreset } from '$lib/tauri/types';
 
 	let currentColor = $state('#34d399');
@@ -132,6 +133,17 @@
 				></button>
 			{/each}
 		</div>
+	</section>
+
+	<!-- ── Currency ──────────────────────────────────────────── -->
+	<section class="section">
+		<h2>{$t('label_currency')}</h2>
+		<p class="hint">{$t('hint_currency')}</p>
+		<select bind:value={$globalCurrency} class="locale-select currency-select">
+			{#each CURRENCIES as c}
+				<option value={c.code}>{c.symbol} {c.code} — {c.name}</option>
+			{/each}
+		</select>
 	</section>
 
 	<!-- ── Language ───────────────────────────────────────────── -->
