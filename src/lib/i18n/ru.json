@@ -163,6 +163,11 @@
   "hint_theme_color": "Основной цвет генерирует всю палитру интерфейса.",
   "hint_backup_description": "Резервные копии шифруются AES-256-GCM и создаются автоматически при закрытии.",
 
+  "label_currency": "Валюта",
+  "label_global_currency": "Глобальная валюта",
+  "label_item_currency": "Валюта товара",
+  "hint_currency": "Выберите валюту по умолчанию для отображения цен. Можно задать отдельно для каждого товара.",
+
   "label_total_packs_value": "Стоимость упаковок",
   "label_potential_packs": "Потенциальных упаковок",
   "label_packaged": "Упаковано",

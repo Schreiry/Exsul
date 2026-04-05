@@ -3,6 +3,7 @@
 	import { t } from '$lib/stores/i18n';
 	import { commands } from '$lib/tauri/commands';
 	import { convertFileSrc } from '@tauri-apps/api/core';
+	import { formatMoney, getCurrencyForItem, setItemCurrency, globalCurrency, CURRENCIES } from '$lib/stores/currency';
 	import type { Item } from '$lib/tauri/types';
 
 	interface Props {
@@ -62,8 +63,13 @@
 			: null
 	);
 
+	// Resolved currency for this item (per-item override or global)
+	let itemCurrency = $derived(
+		item ? getCurrencyForItem(item.id) : $globalCurrency
+	);
+
 	function formatCurrency(value: number): string {
-		return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(value);
+		return $formatMoney(value, itemCurrency);
 	}
 
 	function handleImageDrop(e: DragEvent) {
@@ -170,14 +176,12 @@
 
 		<!-- Image -->
 		{#if editMode}
-			<div
+			<button
+				type="button"
 				class="dropzone"
 				class:drag-active={isDragOver}
-				role="region"
 				aria-label={$t('hint_drop_image')}
-				tabindex="0"
 				onclick={handleImageClick}
-				onkeydown={(e) => e.key === 'Enter' && handleImageClick()}
 				ondragover={(e) => { e.preventDefault(); isDragOver = true; }}
 				ondragleave={() => (isDragOver = false)}
 				ondrop={handleImageDrop}
@@ -187,7 +191,7 @@
 				{:else}
 					<span class="drop-hint">{$t('hint_drop_image')}</span>
 				{/if}
-			</div>
+			</button>
 		{:else if imageSrc}
 			<div class="image-container">
 				<img src={imageSrc} alt={item.name} class="item-image" />
@@ -232,20 +236,33 @@
 		{#if editMode}
 			<div class="edit-form">
 				<div class="field">
-					<label class="field-label">{$t('label_category')}</label>
-					<input class="field-input" type="text" bind:value={draft.category} />
+					<label class="field-label" for="edit-category">{$t('label_category')}</label>
+					<input id="edit-category" class="field-input" type="text" bind:value={draft.category} />
 				</div>
 				<div class="field">
-					<label class="field-label">{$t('label_price')}</label>
-					<input class="field-input" type="number" step="0.01" min="0" bind:value={draft.new_price} />
+					<label class="field-label" for="edit-price">{$t('label_price')}</label>
+					<input id="edit-price" class="field-input" type="number" step="0.01" min="0" bind:value={draft.new_price} />
 				</div>
 				<div class="field">
-					<label class="field-label">{$t('label_cost')}</label>
-					<input class="field-input" type="number" step="0.01" min="0" bind:value={draft.production_cost} />
+					<label class="field-label" for="edit-cost">{$t('label_cost')}</label>
+					<input id="edit-cost" class="field-input" type="number" step="0.01" min="0" bind:value={draft.production_cost} />
 				</div>
 				<div class="field">
-					<label class="field-label">{$t('label_add_stock')} (+/−)</label>
-					<input class="field-input" type="number" bind:value={draft.stock_delta} />
+					<label class="field-label" for="edit-stock">{$t('label_add_stock')} (+/−)</label>
+					<input id="edit-stock" class="field-input" type="number" bind:value={draft.stock_delta} />
+				</div>
+				<div class="field">
+					<label class="field-label" for="edit-currency">{$t('label_item_currency')}</label>
+					<select
+						id="edit-currency"
+						class="field-input"
+						value={itemCurrency}
+						onchange={(e) => setItemCurrency(item.id, (e.currentTarget as HTMLSelectElement).value)}
+					>
+						{#each CURRENCIES as c}
+							<option value={c.code}>{c.symbol} {c.code} — {c.name}</option>
+						{/each}
+					</select>
 				</div>
 			</div>
 

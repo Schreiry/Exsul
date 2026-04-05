@@ -2,6 +2,7 @@
 	import type { Item } from '$lib/tauri/types';
 	import { t } from '$lib/stores/i18n';
 	import { convertFileSrc } from '@tauri-apps/api/core';
+	import { formatMoney, getCurrencyForItem } from '$lib/stores/currency';
 
 	interface Props {
 		item: Item;
@@ -11,12 +12,9 @@
 
 	let { item, appDataDir = '', onclick }: Props = $props();
 
+	// Reactive: re-formats when globalCurrency store changes
 	function formatCurrency(value: number): string {
-		return new Intl.NumberFormat('ru-RU', {
-			style: 'currency',
-			currency: 'RUB',
-			maximumFractionDigits: 0
-		}).format(value);
+		return $formatMoney(value, getCurrencyForItem(item.id));
 	}
 
 	function getImageSrc(path: string | null | undefined, baseDir: string): string | null {
@@ -34,6 +32,7 @@
 	);
 </script>
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
 	class="glass-card"
 	class:clickable={!!onclick}
