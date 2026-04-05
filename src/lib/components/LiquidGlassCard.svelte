@@ -2,7 +2,7 @@
 	import type { Item } from '$lib/tauri/types';
 	import { t } from '$lib/stores/i18n';
 	import { convertFileSrc } from '@tauri-apps/api/core';
-	import { formatMoney, getCurrencyForItem } from '$lib/stores/currency';
+	import { globalCurrency, itemCurrencies, formatAmount } from '$lib/stores/currency';
 
 	interface Props {
 		item: Item;
@@ -12,9 +12,11 @@
 
 	let { item, appDataDir = '', onclick }: Props = $props();
 
-	// Reactive: re-formats when globalCurrency store changes
-	function formatCurrency(value: number): string {
-		return $formatMoney(value, getCurrencyForItem(item.id));
+	// Resolved currency: per-item override takes priority over global
+	let currency = $derived($itemCurrencies[item.id] ?? $globalCurrency);
+
+	function fmt(value: number): string {
+		return formatAmount(value, currency);
 	}
 
 	function getImageSrc(path: string | null | undefined, baseDir: string): string | null {
@@ -57,7 +59,7 @@
 	<div class="card-metrics">
 		<div class="metric">
 			<span class="mlabel">{$t('table_header_price')}</span>
-			<span class="mvalue color-price">{formatCurrency(item.current_price)}</span>
+			<span class="mvalue color-price">{fmt(item.current_price)}</span>
 		</div>
 		<div class="metric">
 			<span class="mlabel">{$t('table_header_stock')}</span>
@@ -69,7 +71,7 @@
 		</div>
 		<div class="metric">
 			<span class="mlabel">{$t('table_header_revenue')}</span>
-			<span class="mvalue color-revenue">{formatCurrency(item.revenue)}</span>
+			<span class="mvalue color-revenue">{fmt(item.revenue)}</span>
 		</div>
 		{#if margin !== null}
 			<div class="metric">
@@ -82,7 +84,7 @@
 		{#if item.production_cost > 0}
 			<div class="metric">
 				<span class="mlabel">{$t('label_cost')}</span>
-				<span class="mvalue color-cost">{formatCurrency(item.production_cost)}</span>
+				<span class="mvalue color-cost">{fmt(item.production_cost)}</span>
 			</div>
 		{/if}
 	</div>

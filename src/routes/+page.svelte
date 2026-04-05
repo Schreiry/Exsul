@@ -3,7 +3,8 @@
 	import { preset } from '$lib/stores/preset';
 	import { flowerSorts, flowerFinancials, flowerConstants, sortsBySpecies } from '$lib/stores/flowers';
 	import { t } from '$lib/stores/i18n';
-	// Load flower data when preset is flowers
+	import { globalCurrency, formatAmount } from '$lib/stores/currency';
+
 	$effect(() => {
 		if ($preset === 'flowers') {
 			flowerSorts.load();
@@ -11,8 +12,8 @@
 		}
 	});
 
-	function formatCurrency(value: number): string {
-		return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(value);
+	function fmt(value: number): string {
+		return formatAmount(value, $globalCurrency);
 	}
 </script>
 
@@ -44,7 +45,7 @@
 			</div>
 			<div class="kpi-card">
 				<span class="kpi-label">{$t('label_total_packs_value')}</span>
-				<span class="kpi-value color-value">{formatCurrency($flowerFinancials.packValue)}</span>
+				<span class="kpi-value color-value">{fmt($flowerFinancials.packValue)}</span>
 			</div>
 		</div>
 
@@ -79,7 +80,7 @@
 								</div>
 								<div class="s-metric">
 									<span class="s-label">{$t('label_total_packs_value')}</span>
-									<span class="s-value color-value">{formatCurrency(totalPkg * $flowerConstants.price_per_pack)}</span>
+									<span class="s-value color-value">{fmt(totalPkg * $flowerConstants.price_per_pack)}</span>
 								</div>
 							</div>
 						</div>
@@ -107,7 +108,7 @@
 			</div>
 			<div class="stat-card">
 				<span class="stat-label">{$t('stat_total_revenue')}</span>
-				<span class="stat-value">{formatCurrency($totalRevenue)}</span>
+				<span class="stat-value">{fmt($totalRevenue)}</span>
 			</div>
 		</div>
 
@@ -122,7 +123,7 @@
 								<span class="item-category">{item.category}</span>
 							</div>
 							<div class="item-meta">
-								<span class="item-price">{formatCurrency(item.current_price)}</span>
+								<span class="item-price">{fmt(item.current_price)}</span>
 								<span class="item-stock">{$t('table_header_stock')}: {item.current_stock}</span>
 							</div>
 						</div>

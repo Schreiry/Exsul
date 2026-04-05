@@ -72,8 +72,10 @@
 		constantsEditing = false;
 	}
 
+	import { globalCurrency, formatAmount } from '$lib/stores/currency';
+
 	function fmtMoney(v: number) {
-		return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(v);
+		return formatAmount(v, $globalCurrency);
 	}
 
 	function fmtWeight(v: number) {
