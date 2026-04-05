@@ -29,3 +29,6 @@ rand = "0.8"
 log = "0.4"
 rusqlite = { version = "0.31", features = ["bundled"] }
 base64 = "0.22"
+tokio-tungstenite = { version = "0.24", features = [] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+tauri-plugin-shell = "2"

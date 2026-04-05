@@ -22,6 +22,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "extensions",
         sql: include_str!("../../migrations/003_extensions.sql"),
     },
+    Migration {
+        version: 4,
+        name: "preset_and_flowers",
+        sql: include_str!("../../migrations/004_preset_and_flowers.sql"),
+    },
 ];
 
 pub fn run(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {

@@ -196,3 +196,127 @@ pub struct AuditLogFilter {
     pub until: Option<String>,
     pub limit: Option<i64>,
 }
+
+// ============================================================
+// App Preset
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AppPreset {
+    Flowers,
+    Ochokochi,
+    Balanced,
+}
+
+impl AppPreset {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AppPreset::Flowers => "flowers",
+            AppPreset::Ochokochi => "ochokochi",
+            AppPreset::Balanced => "balanced",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "flowers" => AppPreset::Flowers,
+            "ochokochi" => AppPreset::Ochokochi,
+            _ => AppPreset::Balanced,
+        }
+    }
+}
+
+// ============================================================
+// Trusted Nodes (P2P whitelist)
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrustedNode {
+    pub node_id: String,
+    pub alias: Option<String>,
+    pub ip_hint: Option<String>,
+    pub added_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddTrustedNodePayload {
+    pub node_id: String,
+    pub alias: Option<String>,
+    pub ip_hint: Option<String>,
+}
+
+// ============================================================
+// Flower Sorts
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowerSort {
+    pub id: String,
+    pub name: String,
+    pub variety: Option<String>,
+    pub color_hex: Option<String>,
+    pub raw_stock: i32,
+    pub pkg_stock: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateFlowerSortPayload {
+    pub name: String,
+    pub variety: Option<String>,
+    pub color_hex: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateFlowerSortPayload {
+    pub id: String,
+    pub name: Option<String>,
+    pub variety: Option<String>,
+    pub color_hex: Option<String>,
+    pub raw_stock: Option<i32>,
+    pub pkg_stock: Option<i32>,
+}
+
+// ============================================================
+// Flower Constants
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowerConstants {
+    pub weight_per_flower: f64,
+    pub flowers_per_pack: f64,
+    pub price_per_pack: f64,
+    pub price_per_flower: f64,
+}
+
+// ============================================================
+// WebSocket / P2P status
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WsPeerState {
+    Connected,
+    Connecting,
+    Disconnected,
+    Rejected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsPeerStatus {
+    pub node_id: String,
+    pub alias: Option<String>,
+    pub ip: String,
+    pub state: WsPeerState,
+    pub last_sync: Option<String>,
+    pub events_merged: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WsServerStatus {
+    pub running: bool,
+    pub port: u16,
+    pub peers: Vec<WsPeerStatus>,
+}

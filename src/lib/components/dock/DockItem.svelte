@@ -30,7 +30,7 @@
 		return glow.subscribe((v) => (glowValue = v));
 	});
 
-	let isActive = $derived(page.url.pathname === config.href);
+	let isActive = $derived(config.href ? page.url.pathname === config.href : false);
 
 	const IconComponent: Component = config.icon;
 
@@ -88,32 +88,56 @@
 	}
 </script>
 
-<a
-	href={config.href}
-	class="dock-item"
-	class:active={isActive}
-	class:vertical
-	class:drag-over={isDragOver}
-	draggable={draggable ? 'true' : undefined}
-	onpointerenter={onPointerEnter}
-	onpointerleave={onPointerLeave}
-	onpointerdown={onPointerDown}
-	onpointerup={onPointerUp}
-	ondragstart={draggable ? onDragStart : undefined}
-	ondragover={draggable ? onDragOver : undefined}
-	ondragleave={draggable ? onDragLeave : undefined}
-	ondrop={draggable ? onDrop : undefined}
-	ondragend={draggable ? onDragEnd : undefined}
-	style:transform="scale({scaleValue})"
-	style:--glow-opacity={glowValue}
-	aria-label={config.label}
-	title={config.label}
->
-	<IconComponent />
-	{#if config.badge}
-		<span class="badge">{config.badge}</span>
-	{/if}
-</a>
+{#if config.onclick}
+	<button
+		type="button"
+		class="dock-item"
+		class:active={isActive}
+		class:vertical
+		class:drag-over={isDragOver}
+		onpointerenter={onPointerEnter}
+		onpointerleave={onPointerLeave}
+		onpointerdown={onPointerDown}
+		onpointerup={onPointerUp}
+		onclick={config.onclick}
+		style:transform="scale({scaleValue})"
+		style:--glow-opacity={glowValue}
+		aria-label={config.label}
+		title={config.label}
+	>
+		<IconComponent />
+		{#if config.badge}
+			<span class="badge">{config.badge}</span>
+		{/if}
+	</button>
+{:else}
+	<a
+		href={config.href}
+		class="dock-item"
+		class:active={isActive}
+		class:vertical
+		class:drag-over={isDragOver}
+		draggable={draggable ? 'true' : undefined}
+		onpointerenter={onPointerEnter}
+		onpointerleave={onPointerLeave}
+		onpointerdown={onPointerDown}
+		onpointerup={onPointerUp}
+		ondragstart={draggable ? onDragStart : undefined}
+		ondragover={draggable ? onDragOver : undefined}
+		ondragleave={draggable ? onDragLeave : undefined}
+		ondrop={draggable ? onDrop : undefined}
+		ondragend={draggable ? onDragEnd : undefined}
+		style:transform="scale({scaleValue})"
+		style:--glow-opacity={glowValue}
+		aria-label={config.label}
+		title={config.label}
+	>
+		<IconComponent />
+		{#if config.badge}
+			<span class="badge">{config.badge}</span>
+		{/if}
+	</a>
+{/if}
 
 <style>
 	.dock-item {

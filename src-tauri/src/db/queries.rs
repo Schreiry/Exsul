@@ -1,7 +1,8 @@
 use crate::events::types::{
-    AuditLog, AuditLogFilter, Category, CreateCategoryPayload, EventRecord, Item, Order,
-    OrderItem, PriceRecord, SyncPeer, UpdateCategoryPayload, AddOrderItemPayload,
-    CreateOrderPayload,
+    AddOrderItemPayload, AddTrustedNodePayload, AuditLog, AuditLogFilter, Category,
+    CreateCategoryPayload, CreateFlowerSortPayload, EventRecord, FlowerConstants, FlowerSort,
+    Item, Order, OrderItem, PriceRecord, SyncPeer, TrustedNode, UpdateCategoryPayload,
+    UpdateFlowerSortPayload, CreateOrderPayload,
 };
 use rusqlite::{params, Connection};
 
@@ -552,4 +553,251 @@ pub fn get_audit_logs(
         .map_err(|e| e.to_string())?;
 
     Ok(logs)
+}
+
+// ============================================================
+// Local Config
+// ============================================================
+
+pub fn get_local_config(conn: &Connection, key: &str) -> Result<Option<String>, String> {
+    let result = conn.query_row(
+        "SELECT value FROM local_config WHERE key = ?1",
+        [key],
+        |row| row.get(0),
+    );
+    match result {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub fn set_local_config(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO local_config (key, value) VALUES (?1, ?2)",
+        params![key, value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================
+// Trusted Nodes
+// ============================================================
+
+pub fn get_trusted_nodes(conn: &Connection) -> Result<Vec<TrustedNode>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT node_id, alias, ip_hint, added_at FROM trusted_nodes ORDER BY added_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let nodes = stmt
+        .query_map([], |row| {
+            Ok(TrustedNode {
+                node_id: row.get(0)?,
+                alias: row.get(1)?,
+                ip_hint: row.get(2)?,
+                added_at: row.get(3)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(nodes)
+}
+
+pub fn is_trusted_node(conn: &Connection, node_id: &str) -> Result<bool, String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM trusted_nodes WHERE node_id = ?1",
+            [node_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(count > 0)
+}
+
+pub fn get_trusted_node_alias(
+    conn: &Connection,
+    node_id: &str,
+) -> Result<Option<String>, String> {
+    let result = conn.query_row(
+        "SELECT alias FROM trusted_nodes WHERE node_id = ?1",
+        [node_id],
+        |row| row.get(0),
+    );
+    match result {
+        Ok(v) => Ok(v),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub fn insert_trusted_node(
+    conn: &Connection,
+    payload: &AddTrustedNodePayload,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO trusted_nodes (node_id, alias, ip_hint) VALUES (?1, ?2, ?3)",
+        params![payload.node_id, payload.alias, payload.ip_hint],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn delete_trusted_node(conn: &Connection, node_id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM trusted_nodes WHERE node_id = ?1", [node_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_peer_last_hlc(
+    conn: &Connection,
+    peer_node_id: &str,
+) -> Result<Option<String>, String> {
+    let result = conn.query_row(
+        "SELECT last_hlc FROM sync_state WHERE peer_node_id = ?1",
+        [peer_node_id],
+        |row| row.get(0),
+    );
+    match result {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+// ============================================================
+// Flower Sorts
+// ============================================================
+
+pub fn get_flower_sorts(conn: &Connection) -> Result<Vec<FlowerSort>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, variety, color_hex, raw_stock, pkg_stock, created_at, updated_at
+             FROM flower_sorts ORDER BY name ASC, variety ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let sorts = stmt
+        .query_map([], |row| {
+            Ok(FlowerSort {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                variety: row.get(2)?,
+                color_hex: row.get(3)?,
+                raw_stock: row.get(4)?,
+                pkg_stock: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(sorts)
+}
+
+pub fn insert_flower_sort(
+    conn: &Connection,
+    id: &str,
+    payload: &CreateFlowerSortPayload,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO flower_sorts (id, name, variety, color_hex) VALUES (?1, ?2, ?3, ?4)",
+        params![id, payload.name, payload.variety, payload.color_hex],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn update_flower_sort(
+    conn: &Connection,
+    payload: &UpdateFlowerSortPayload,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE flower_sorts SET
+            name      = COALESCE(?2, name),
+            variety   = COALESCE(?3, variety),
+            color_hex = COALESCE(?4, color_hex),
+            raw_stock = COALESCE(?5, raw_stock),
+            pkg_stock = COALESCE(?6, pkg_stock),
+            updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+         WHERE id = ?1",
+        params![
+            payload.id,
+            payload.name,
+            payload.variety,
+            payload.color_hex,
+            payload.raw_stock,
+            payload.pkg_stock
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn delete_flower_sort(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM flower_sorts WHERE id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn adjust_flower_stock(
+    conn: &Connection,
+    id: &str,
+    raw_delta: i32,
+    pkg_delta: i32,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE flower_sorts SET
+            raw_stock  = MAX(0, raw_stock  + ?2),
+            pkg_stock  = MAX(0, pkg_stock  + ?3),
+            updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+         WHERE id = ?1",
+        params![id, raw_delta, pkg_delta],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================
+// Flower Constants
+// ============================================================
+
+pub fn get_flower_constants(conn: &Connection) -> Result<FlowerConstants, String> {
+    fn get_val(conn: &Connection, k: &str) -> f64 {
+        conn.query_row(
+            "SELECT value FROM flower_constants WHERE key = ?1",
+            [k],
+            |row| row.get(0),
+        )
+        .unwrap_or(0.0)
+    }
+    Ok(FlowerConstants {
+        weight_per_flower: get_val(conn, "weight_per_flower"),
+        flowers_per_pack: get_val(conn, "flowers_per_pack"),
+        price_per_pack: get_val(conn, "price_per_pack"),
+        price_per_flower: get_val(conn, "price_per_flower"),
+    })
+}
+
+pub fn set_flower_constants(conn: &Connection, c: &FlowerConstants) -> Result<(), String> {
+    let pairs = [
+        ("weight_per_flower", c.weight_per_flower),
+        ("flowers_per_pack", c.flowers_per_pack),
+        ("price_per_pack", c.price_per_pack),
+        ("price_per_flower", c.price_per_flower),
+    ];
+    for (k, v) in &pairs {
+        conn.execute(
+            "INSERT OR REPLACE INTO flower_constants (key, value) VALUES (?1, ?2)",
+            params![k, v],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

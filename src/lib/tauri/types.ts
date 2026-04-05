@@ -174,3 +174,88 @@ export interface AuditLogFilter {
 	until?: string;
 	limit?: number;
 }
+
+// ============================================================
+// App Preset
+// ============================================================
+
+export type AppPreset = 'flowers' | 'ochokochi' | 'balanced';
+
+// ============================================================
+// Trusted Nodes
+// ============================================================
+
+export interface TrustedNode {
+	node_id: string;
+	alias?: string;
+	ip_hint?: string;
+	added_at: string;
+}
+
+export interface AddTrustedNodePayload {
+	node_id: string;
+	alias?: string;
+	ip_hint?: string;
+}
+
+// ============================================================
+// Flower Sorts
+// ============================================================
+
+export interface FlowerSort {
+	id: string;
+	name: string;
+	variety?: string;
+	color_hex?: string;
+	raw_stock: number;
+	pkg_stock: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateFlowerSortPayload {
+	name: string;
+	variety?: string;
+	color_hex?: string;
+}
+
+export interface UpdateFlowerSortPayload {
+	id: string;
+	name?: string;
+	variety?: string;
+	color_hex?: string;
+	raw_stock?: number;
+	pkg_stock?: number;
+}
+
+// ============================================================
+// Flower Constants
+// ============================================================
+
+export interface FlowerConstants {
+	weight_per_flower: number;
+	flowers_per_pack: number;
+	price_per_pack: number;
+	price_per_flower: number;
+}
+
+// ============================================================
+// WebSocket / P2P
+// ============================================================
+
+export type WsPeerState = 'connected' | 'connecting' | 'disconnected' | 'rejected';
+
+export interface WsPeerStatus {
+	node_id: string;
+	alias?: string;
+	ip: string;
+	state: WsPeerState;
+	last_sync?: string;
+	events_merged: number;
+}
+
+export interface WsServerStatus {
+	running: boolean;
+	port: number;
+	peers: WsPeerStatus[];
+}
