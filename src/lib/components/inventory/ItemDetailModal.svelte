@@ -3,7 +3,7 @@
 	import { t } from '$lib/stores/i18n';
 	import { commands } from '$lib/tauri/commands';
 	import { convertFileSrc } from '@tauri-apps/api/core';
-	import { formatMoney, getCurrencyForItem, setItemCurrency, globalCurrency, CURRENCIES } from '$lib/stores/currency';
+	import { globalCurrency, itemCurrencies, formatAmount, setItemCurrency, CURRENCIES } from '$lib/stores/currency';
 	import type { Item } from '$lib/tauri/types';
 
 	interface Props {
@@ -63,13 +63,13 @@
 			: null
 	);
 
-	// Resolved currency for this item (per-item override or global)
+	// Resolved currency: per-item override → global fallback
 	let itemCurrency = $derived(
-		item ? getCurrencyForItem(item.id) : $globalCurrency
+		(item ? $itemCurrencies[item.id] : undefined) ?? $globalCurrency
 	);
 
-	function formatCurrency(value: number): string {
-		return $formatMoney(value, itemCurrency);
+	function fmt(value: number): string {
+		return formatAmount(value, itemCurrency);
 	}
 
 	function handleImageDrop(e: DragEvent) {
@@ -203,7 +203,7 @@
 			<div class="metrics-grid">
 				<div class="metric">
 					<span class="mlabel">{$t('table_header_price')}</span>
-					<span class="mvalue color-price">{formatCurrency(item.current_price)}</span>
+					<span class="mvalue color-price">{fmt(item.current_price)}</span>
 				</div>
 				<div class="metric">
 					<span class="mlabel">{$t('table_header_stock')}</span>
@@ -215,7 +215,7 @@
 				</div>
 				<div class="metric">
 					<span class="mlabel">{$t('table_header_revenue')}</span>
-					<span class="mvalue color-revenue">{formatCurrency(item.revenue)}</span>
+					<span class="mvalue color-revenue">{fmt(item.revenue)}</span>
 				</div>
 				{#if margin !== null}
 					<div class="metric">
@@ -226,7 +226,7 @@
 				{#if item.production_cost > 0}
 					<div class="metric">
 						<span class="mlabel">{$t('label_cost')}</span>
-						<span class="mvalue color-cost">{formatCurrency(item.production_cost)}</span>
+						<span class="mvalue color-cost">{fmt(item.production_cost)}</span>
 					</div>
 				{/if}
 			</div>

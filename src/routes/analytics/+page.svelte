@@ -2,9 +2,10 @@
 	import { inventory, totalRevenue, totalStock, totalItems } from '$lib/stores/inventory';
 	import { commands } from '$lib/tauri/commands';
 	import { t } from '$lib/stores/i18n';
+	import { globalCurrency, formatAmount } from '$lib/stores/currency';
 
-	function formatCurrency(value: number): string {
-		return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+	function fmt(value: number): string {
+		return formatAmount(value, $globalCurrency);
 	}
 
 	let categoryStats = $derived(
@@ -286,7 +287,7 @@
 	<div class="overview-grid">
 		<div class="metric-card accent">
 			<span class="metric-label">{$t('stat_total_revenue')}</span>
-			<span class="metric-value">{formatCurrency($totalRevenue)}</span>
+			<span class="metric-value">{fmt($totalRevenue)}</span>
 		</div>
 		<div class="metric-card">
 			<span class="metric-label">{$t('stat_total_items')}</span>
@@ -331,7 +332,7 @@
 								<td>{stats.count}</td>
 								<td>{stats.stock}</td>
 								<td>{stats.sold}</td>
-								<td>{formatCurrency(stats.revenue)}</td>
+								<td>{fmt(stats.revenue)}</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -359,7 +360,7 @@
 								<td>{item.name}</td>
 								<td>{item.category}</td>
 								<td>{item.sold_count}</td>
-								<td>{formatCurrency(item.revenue)}</td>
+								<td>{fmt(item.revenue)}</td>
 							</tr>
 						{/each}
 					</tbody>
