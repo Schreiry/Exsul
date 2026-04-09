@@ -111,3 +111,40 @@ pub async fn restore_from_backup(
     log::info!("Backup restored from {:?}", backup_path);
     Ok(())
 }
+
+/// Restore from raw backup bytes (sent from the frontend file picker).
+pub async fn restore_from_backup_data(
+    handle: &AppHandle,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    let app_dir = handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
+    let db_path = app_dir.join("exsul.db");
+
+    if data.len() < 28 {
+        return Err("Backup file too small or corrupted".to_string());
+    }
+
+    let salt = &data[..16];
+    let nonce_bytes = &data[16..28];
+    let ciphertext = &data[28..];
+
+    let passphrase = b"exsul-default-backup-key";
+    let key = derive_key(passphrase, salt);
+
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| format!("cipher init: {e}"))?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| "Decryption failed — file may be corrupted or not a valid Exsul backup".to_string())?;
+
+    tokio::fs::write(&db_path, plaintext)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    log::info!("Backup restored from in-memory data ({} bytes)", data.len());
+    Ok(())
+}

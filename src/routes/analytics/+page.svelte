@@ -1,12 +1,61 @@
 <script lang="ts">
 	import { inventory, totalRevenue, totalStock, totalItems } from '$lib/stores/inventory';
+	import { orders } from '$lib/stores/orders';
+	import { flowerSorts } from '$lib/stores/flowers';
+	import { preset } from '$lib/stores/preset';
 	import { commands } from '$lib/tauri/commands';
 	import { t } from '$lib/stores/i18n';
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
+	import { hlcToDate } from '$lib/utils/time';
+
+	const TZ = 'Asia/Tbilisi';
+
+	// ── Date range filter ─────────────────────────────────────
+	let dateFrom = $state('');
+	let dateTo = $state('');
+
+	$effect(() => {
+		orders.load();
+		if ($preset === 'flowers') flowerSorts.load();
+	});
 
 	function fmt(value: number): string {
 		return formatAmount(value, $globalCurrency);
 	}
+
+	// ── Orders analytics ──────────────────────────────────────
+	const orderStats = $derived({
+		total: $orders.length,
+		pending: $orders.filter((o) => o.status === 'pending').length,
+		inProgress: $orders.filter((o) => o.status === 'in_progress').length,
+		completed: $orders.filter((o) => o.status === 'completed').length,
+		cancelled: $orders.filter((o) => o.status === 'cancelled').length,
+		totalAmount: $orders.reduce((s, o) => s + o.total_amount, 0),
+		pendingAmount: $orders
+			.filter((o) => o.status === 'pending' || o.status === 'in_progress')
+			.reduce((s, o) => s + o.total_amount, 0),
+		completedAmount: $orders
+			.filter((o) => o.status === 'completed')
+			.reduce((s, o) => s + o.total_amount, 0),
+	});
+
+	// ── Inventory analytics ───────────────────────────────────
+	const warehouseStats = $derived({
+		totalCost: $inventory.reduce((s, i) => s + i.production_cost * i.current_stock, 0),
+		totalValue: $inventory.reduce((s, i) => s + i.current_price * i.current_stock, 0),
+		avgMargin: (() => {
+			const totalStock = $inventory.reduce((s, i) => s + i.current_stock, 0);
+			if (totalStock === 0) return 0;
+			const weighted = $inventory.reduce((s, i) => {
+				const m = i.current_price > 0
+					? (i.current_price - i.production_cost) / i.current_price
+					: 0;
+				return s + m * i.current_stock;
+			}, 0);
+			return Math.round((weighted / totalStock) * 100);
+		})(),
+		totalSold: $inventory.reduce((s, i) => s + i.sold_count, 0),
+	});
 
 	let categoryStats = $derived(
 		Object.entries(
@@ -151,29 +200,76 @@
 
 	// ── Canvas: Sales Velocity Line Chart ──
 	let salesCanvas = $state<HTMLCanvasElement | null>(null);
+	let stockCanvas = $state<HTMLCanvasElement | null>(null);
 
 	type DailyBucket = Record<string, number>;
 
+	/** Convert HLC ms to YYYY-MM-DD in Tbilisi TZ */
+	function hlcToDay(hlcStr: string): string | null {
+		const d = hlcToDate(hlcStr);
+		if (!d) return null;
+		return d.toLocaleDateString('sv', { timeZone: TZ });
+	}
+
+	/** Apply optional date-range filter to a YYYY-MM-DD key */
+	function inRange(day: string): boolean {
+		if (dateFrom && day < dateFrom) return false;
+		if (dateTo && day > dateTo) return false;
+		return true;
+	}
+
 	async function loadSalesBuckets(): Promise<DailyBucket> {
-		const events = await commands.getEvents(undefined, 500);
+		const events = await commands.getEvents(undefined, 2000);
 		const buckets: DailyBucket = {};
 		for (const ev of events) {
 			if (ev.event_type !== 'SaleRecorded') continue;
-			// HLC timestamp format: "{ms}:{counter}:{nodeId}" — extract ms prefix
-			const ms = parseInt(ev.hlc_timestamp.split(':')[0], 10);
-			if (isNaN(ms)) continue;
-			const day = new Date(ms).toISOString().slice(0, 10);
+			const day = hlcToDay(ev.hlc_timestamp);
+			if (!day || !inRange(day)) continue;
 			const qty = (ev.data as { quantity?: number }).quantity ?? 0;
 			buckets[day] = (buckets[day] ?? 0) + qty;
 		}
 		return buckets;
 	}
 
+	async function loadStockBuckets(): Promise<DailyBucket> {
+		const events = await commands.getEvents(undefined, 2000);
+		const buckets: DailyBucket = {};
+		for (const ev of events) {
+			if (ev.event_type !== 'StockAdjusted' && ev.event_type !== 'ItemCreated') continue;
+			const day = hlcToDay(ev.hlc_timestamp);
+			if (!day || !inRange(day)) continue;
+			let qty = 0;
+			if (ev.event_type === 'StockAdjusted') {
+				const delta = (ev.data as { delta?: number }).delta ?? 0;
+				if (delta > 0) qty = delta; // count only additions
+			} else if (ev.event_type === 'ItemCreated') {
+				qty = (ev.data as { initial_stock?: number }).initial_stock ?? 0;
+			}
+			if (qty > 0) buckets[day] = (buckets[day] ?? 0) + qty;
+		}
+		return buckets;
+	}
+
 	let salesBuckets = $state<DailyBucket>({});
+	let stockBuckets = $state<DailyBucket>({});
 
 	$effect(() => {
+		// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+		dateFrom; dateTo; // reactive: reload when range changes
 		loadSalesBuckets().then((b) => (salesBuckets = b));
+		loadStockBuckets().then((b) => (stockBuckets = b));
 	});
+
+	/** Build last-N-days array in Tbilisi TZ */
+	function buildDays(n: number): string[] {
+		const days: string[] = [];
+		const now = new Date();
+		for (let i = n - 1; i >= 0; i--) {
+			const d = new Date(now.getTime() - i * 86400000);
+			days.push(d.toLocaleDateString('sv', { timeZone: TZ }));
+		}
+		return days;
+	}
 
 	$effect(() => {
 		const canvas = salesCanvas;
@@ -203,13 +299,8 @@
 
 		ctx.clearRect(0, 0, W, H);
 
-		// Build last 30 days
-		const days: string[] = [];
-		for (let i = 29; i >= 0; i--) {
-			const d = new Date(Date.now() - i * 86400000);
-			days.push(d.toISOString().slice(0, 10));
-		}
-
+		// Build last 30 days using Tbilisi timezone
+		const days = buildDays(30);
 		const values = days.map((d) => salesBuckets[d] ?? 0);
 		const maxVal = Math.max(...values, 1);
 
@@ -279,11 +370,89 @@
 			ctx.fillText(days[i]?.slice(5) ?? '', x, padTop + chartH + 18);
 		});
 	});
+
+	// ── Canvas: Stock Additions Chart ──
+	$effect(() => {
+		const canvas = stockCanvas;
+		if (!canvas) return;
+
+		const style = getComputedStyle(document.documentElement);
+		const color = style.getPropertyValue('--color-tertiary').trim() || '#a78bfa';
+		const outline = style.getPropertyValue('--color-outline-variant').trim() || 'rgba(255,255,255,0.1)';
+		const onSurface = style.getPropertyValue('--color-on-surface').trim() || '#e0e0e0';
+
+		const dpr = window.devicePixelRatio || 1;
+		const rect = canvas.getBoundingClientRect();
+		canvas.width = rect.width * dpr;
+		canvas.height = rect.height * dpr;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) return;
+		ctx.scale(dpr, dpr);
+
+		const W = rect.width, H = rect.height;
+		const padTop = 16, padBottom = 32, padLeft = 36, padRight = 16;
+		const chartW = W - padLeft - padRight;
+		const chartH = H - padTop - padBottom;
+
+		ctx.clearRect(0, 0, W, H);
+
+		const days = buildDays(30);
+		const values = days.map((d) => stockBuckets[d] ?? 0);
+		const maxVal = Math.max(...values, 1);
+		const barW = Math.max(2, chartW / days.length - 2);
+
+		// Axis
+		ctx.beginPath(); ctx.strokeStyle = outline; ctx.lineWidth = 1;
+		ctx.moveTo(padLeft, padTop); ctx.lineTo(padLeft, padTop + chartH);
+		ctx.lineTo(padLeft + chartW, padTop + chartH); ctx.stroke();
+
+		// Y ticks
+		ctx.fillStyle = onSurface; ctx.globalAlpha = 0.4;
+		ctx.font = '10px system-ui'; ctx.textAlign = 'right';
+		for (let tick = 0; tick <= 3; tick++) {
+			const val = Math.round((maxVal * tick) / 3);
+			const y = padTop + chartH - (chartH * tick) / 3;
+			ctx.fillText(String(val), padLeft - 4, y + 4);
+		}
+
+		// Bars
+		ctx.globalAlpha = 1;
+		values.forEach((val, i) => {
+			if (val === 0) return;
+			const bh = (val / maxVal) * chartH;
+			const x = padLeft + (i / days.length) * chartW;
+			const y = padTop + chartH - bh;
+			ctx.fillStyle = color;
+			ctx.globalAlpha = 0.75;
+			ctx.beginPath();
+			ctx.roundRect(x, y, barW, bh, [3, 3, 0, 0]);
+			ctx.fill();
+		});
+
+		// X labels
+		ctx.globalAlpha = 0.4; ctx.fillStyle = onSurface; ctx.textAlign = 'center';
+		[0, 7, 14, 21, 29].forEach((i) => {
+			const x = padLeft + (i / (days.length - 1)) * chartW;
+			ctx.fillText(days[i]?.slice(5) ?? '', x, padTop + chartH + 18);
+		});
+	});
 </script>
 
 <div class="analytics-page">
 	<h1>{$t('page_analytics_title')}</h1>
 
+	<!-- ── Date range filter ─────────────────────────────────── -->
+	<div class="date-filter">
+		<span class="date-filter-label">Период:</span>
+		<input class="date-input" type="date" bind:value={dateFrom} title="С даты" />
+		<span style="color:var(--color-outline)">—</span>
+		<input class="date-input" type="date" bind:value={dateTo} title="По дату" />
+		{#if dateFrom || dateTo}
+			<button class="btn-ghost-sm" onclick={() => { dateFrom = ''; dateTo = ''; }}>✕ Сброс</button>
+		{/if}
+	</div>
+
+	<!-- ── KPI Overview ─────────────────────────────────────── -->
 	<div class="overview-grid">
 		<div class="metric-card accent">
 			<span class="metric-label">{$t('stat_total_revenue')}</span>
@@ -297,7 +466,91 @@
 			<span class="metric-label">{$t('stat_total_stock')}</span>
 			<span class="metric-value">{$totalStock}</span>
 		</div>
+		<div class="metric-card">
+			<span class="metric-label">Себест. склада</span>
+			<span class="metric-value">{fmt(warehouseStats.totalCost)}</span>
+		</div>
+		<div class="metric-card">
+			<span class="metric-label">Стоимость склада</span>
+			<span class="metric-value">{fmt(warehouseStats.totalValue)}</span>
+		</div>
+		<div class="metric-card">
+			<span class="metric-label">Ср. маржа</span>
+			<span class="metric-value">{warehouseStats.avgMargin}%</span>
+		</div>
+		<div class="metric-card">
+			<span class="metric-label">Продано всего</span>
+			<span class="metric-value">{warehouseStats.totalSold}</span>
+		</div>
+		<div class="metric-card">
+			<span class="metric-label">Активных заказов</span>
+			<span class="metric-value">{orderStats.pending + orderStats.inProgress}</span>
+		</div>
+		<div class="metric-card">
+			<span class="metric-label">Сумма в работе</span>
+			<span class="metric-value">{fmt(orderStats.pendingAmount)}</span>
+		</div>
 	</div>
+
+	<!-- ── Orders breakdown ──────────────────────────────────── -->
+	{#if orderStats.total > 0}
+	<section class="section">
+		<h2>Заказы</h2>
+		<div class="orders-status-grid">
+			<div class="order-status-card status-pending">
+				<span class="ost-num">{orderStats.pending}</span>
+				<span class="ost-lbl">Ожидают</span>
+			</div>
+			<div class="order-status-card status-inprogress">
+				<span class="ost-num">{orderStats.inProgress}</span>
+				<span class="ost-lbl">В работе</span>
+			</div>
+			<div class="order-status-card status-completed">
+				<span class="ost-num">{orderStats.completed}</span>
+				<span class="ost-lbl">Выполнено</span>
+			</div>
+			<div class="order-status-card status-cancelled">
+				<span class="ost-num">{orderStats.cancelled}</span>
+				<span class="ost-lbl">Отменено</span>
+			</div>
+		</div>
+		<div class="orders-amounts">
+			<div class="amount-row">
+				<span class="amount-lbl">Выручка (выполн.):</span>
+				<span class="amount-val color-primary">{fmt(orderStats.completedAmount)}</span>
+			</div>
+			<div class="amount-row">
+				<span class="amount-lbl">В ожидании:</span>
+				<span class="amount-val">{fmt(orderStats.pendingAmount)}</span>
+			</div>
+			<div class="amount-row">
+				<span class="amount-lbl">Всего по заказам:</span>
+				<span class="amount-val">{fmt(orderStats.totalAmount)}</span>
+			</div>
+		</div>
+	</section>
+	{/if}
+
+	<!-- ── Flowers summary (preset only) ─────────────────────── -->
+	{#if $preset === 'flowers' && $flowerSorts.length > 0}
+	<section class="section">
+		<h2>🌸 Цветочный склад</h2>
+		<div class="overview-grid">
+			<div class="metric-card">
+				<span class="metric-label">Сортов</span>
+				<span class="metric-value">{$flowerSorts.length}</span>
+			</div>
+			<div class="metric-card">
+				<span class="metric-label">Стеблей</span>
+				<span class="metric-value">{$flowerSorts.reduce((s, f) => s + f.raw_stock, 0)}</span>
+			</div>
+			<div class="metric-card">
+				<span class="metric-label">Упаковок</span>
+				<span class="metric-value">{$flowerSorts.reduce((s, f) => s + f.pkg_stock, 0)}</span>
+			</div>
+		</div>
+	</section>
+	{/if}
 
 	<!-- Charts row -->
 	<div class="charts-row">
@@ -511,7 +764,63 @@
 	.weeks-badge.yellow { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
 	.weeks-badge.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
 
+	/* ── Orders breakdown ── */
+	.orders-status-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 10px;
+		margin-bottom: 16px;
+	}
+
+	@media (max-width: 640px) {
+		.orders-status-grid { grid-template-columns: repeat(2, 1fr); }
+	}
+
+	.order-status-card {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+		padding: 14px;
+		border-radius: 12px;
+		border: 1px solid var(--color-outline-variant);
+	}
+
+	.status-pending    { border-color: rgba(251,191,36,0.3);  background: rgba(251,191,36,0.06);  }
+	.status-inprogress { border-color: rgba(96,165,250,0.3);  background: rgba(96,165,250,0.06);  }
+	.status-completed  { border-color: rgba(52,211,153,0.3);  background: rgba(52,211,153,0.06);  }
+	.status-cancelled  { border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.06); }
+
+	.status-pending    .ost-num { color: #fbbf24; }
+	.status-inprogress .ost-num { color: #60a5fa; }
+	.status-completed  .ost-num { color: #34d399; }
+	.status-cancelled  .ost-num { color: #f87171; }
+
+	.ost-num { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.03em; }
+	.ost-lbl { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--color-outline); }
+
+	.orders-amounts {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		padding: 12px 16px;
+		background: var(--color-surface-container);
+		border-radius: 10px;
+	}
+
+	.amount-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: 0.875rem;
+	}
+
+	.amount-lbl { color: var(--color-on-surface); opacity: 0.6; }
+	.amount-val { font-weight: 600; color: var(--color-on-surface); }
+	.color-primary { color: var(--color-primary); }
+
 	@media (max-width: 640px) {
 		.charts-row { grid-template-columns: 1fr; }
+		.overview-grid { grid-template-columns: repeat(2, 1fr); }
 	}
 </style>

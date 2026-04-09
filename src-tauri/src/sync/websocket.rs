@@ -29,7 +29,11 @@ pub const WS_PORT: u16 = 8765;
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Frame {
     /// First message both sides send after TCP connect.
-    Hello { node_id: String },
+    Hello {
+        node_id: String,
+        #[serde(default)]
+        app_version: String,
+    },
     /// Rejected — remote node_id not in our trusted list.
     Rejected { reason: String },
     /// Request delta events since a given HLC (or all if None).
@@ -67,6 +71,7 @@ pub struct LivePeer {
     pub state: WsPeerState,
     pub last_sync: Option<String>,
     pub events_merged: u32,
+    pub app_version: Option<String>,
 }
 
 pub struct WsManager {
@@ -204,14 +209,15 @@ async fn handle_server_conn(
     let ip = peer_addr.ip().to_string();
 
     // Send Hello
-    if let Ok(msg) = (Frame::Hello { node_id: local_id.clone() }).to_text() {
+    let local_version = handle.package_info().version.to_string();
+    if let Ok(msg) = (Frame::Hello { node_id: local_id.clone(), app_version: local_version }).to_text() {
         let _ = tx.send(msg).await;
     }
 
     // Expect Hello back
-    let peer_node_id = match rx.next().await {
+    let (peer_node_id, peer_version) = match rx.next().await {
         Some(Ok(Message::Text(t))) => match Frame::from_text(&t) {
-            Ok(Frame::Hello { node_id }) => node_id,
+            Ok(Frame::Hello { node_id, app_version }) => (node_id, app_version),
             _ => {
                 log::warn!("[WS] Expected Hello from {}", ip);
                 return;
@@ -238,6 +244,16 @@ async fn handle_server_conn(
     let alias = get_alias(&handle, &peer_node_id);
     log::info!("[WS] Trusted peer connected: {} ({})", peer_node_id, ip);
 
+    // Store peer version in sync_state
+    {
+        let db = handle.state::<Database>();
+        let conn = db.conn.lock().unwrap();
+        let _ = conn.execute(
+            "UPDATE sync_state SET remote_version = ?1 WHERE peer_node_id = ?2",
+            rusqlite::params![peer_version, peer_node_id],
+        );
+    }
+
     // Register peer as connected
     {
         let mut peers = manager.peers.lock().await;
@@ -250,6 +266,7 @@ async fn handle_server_conn(
                 state: WsPeerState::Connected,
                 last_sync: None,
                 events_merged: 0,
+                app_version: Some(peer_version.clone()),
             },
         );
         let list: Vec<LivePeer> = peers.values().cloned().collect();
@@ -338,6 +355,7 @@ pub async fn connect_to_peer(
             state: WsPeerState::Connecting,
             last_sync: None,
             events_merged: 0,
+            app_version: None,
         });
         let list: Vec<LivePeer> = peers.values().cloned().collect();
         emit_peer_update(&handle, list);
@@ -350,14 +368,15 @@ pub async fn connect_to_peer(
     let (mut tx, mut rx) = ws.split();
 
     // Send Hello
-    tx.send(Frame::Hello { node_id: local_id.clone() }.to_text()?)
+    let local_version = handle.package_info().version.to_string();
+    tx.send(Frame::Hello { node_id: local_id.clone(), app_version: local_version }.to_text()?)
         .await
         .map_err(|e| e.to_string())?;
 
     // Expect Hello back
-    let peer_node_id = match rx.next().await {
+    let (peer_node_id, peer_version) = match rx.next().await {
         Some(Ok(Message::Text(t))) => match Frame::from_text(&t)? {
-            Frame::Hello { node_id } => node_id,
+            Frame::Hello { node_id, app_version } => (node_id, app_version),
             Frame::Rejected { reason } => return Err(format!("Rejected: {}", reason)),
             _ => return Err("Unexpected first frame".to_string()),
         },
@@ -374,6 +393,16 @@ pub async fn connect_to_peer(
 
     log::info!("[WS] Trusted peer: {} at {}", peer_node_id, target_ip);
 
+    // Store peer version in sync_state
+    {
+        let db = handle.state::<Database>();
+        let conn = db.conn.lock().unwrap();
+        let _ = conn.execute(
+            "UPDATE sync_state SET remote_version = ?1 WHERE peer_node_id = ?2",
+            rusqlite::params![peer_version, peer_node_id],
+        );
+    }
+
     // Update registry
     {
         let mut peers = manager.peers.lock().await;
@@ -384,10 +413,12 @@ pub async fn connect_to_peer(
             state: WsPeerState::Connecting,
             last_sync: None,
             events_merged: 0,
+            app_version: None,
         });
         entry.node_id = peer_node_id.clone();
         entry.alias = alias;
         entry.state = WsPeerState::Connected;
+        entry.app_version = Some(peer_version.clone());
         let list: Vec<LivePeer> = peers.values().cloned().collect();
         emit_peer_update(&handle, list);
     }

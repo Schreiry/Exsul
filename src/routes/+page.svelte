@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { inventory, totalStock, totalRevenue, totalItems } from '$lib/stores/inventory';
 	import { preset } from '$lib/stores/preset';
-	import { flowerSorts, flowerFinancials, flowerConstants } from '$lib/stores/flowers';
+	import { flowerSorts } from '$lib/stores/flowers';
 	import { orders } from '$lib/stores/orders';
 	import { auditLog } from '$lib/stores/audit';
 	import { nodeId, wsServerRunning, wsPeers, loadWsStatus } from '$lib/stores/sync';
@@ -13,7 +13,6 @@
 	$effect(() => {
 		if ($preset === 'flowers') {
 			flowerSorts.load();
-			flowerConstants.load();
 		}
 		orders.load();
 		auditLog.load({ limit: 8 });
@@ -95,8 +94,11 @@
 
 	function formatTime(ts: string): string {
 		try {
-			const d = new Date(ts);
-			return d.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+			return new Date(ts).toLocaleTimeString('ru', {
+				timeZone: 'Asia/Tbilisi',
+				hour: '2-digit',
+				minute: '2-digit',
+			});
 		} catch {
 			return ts;
 		}
@@ -218,6 +220,16 @@
 						<span class="inv-kpi-lbl">{$t('stat_total_revenue')}</span>
 					</div>
 				</div>
+				{#if $preset === 'flowers' && $flowerSorts.length > 0}
+					<div class="inv-flowers-row">
+						<span class="inv-flowers-item">
+							🌸 {$flowerSorts.reduce((s, f) => s + f.raw_stock, 0)} стеблей
+						</span>
+						<span class="inv-flowers-item">
+							📦 {$flowerSorts.reduce((s, f) => s + f.pkg_stock, 0)} упаковок
+						</span>
+					</div>
+				{/if}
 				{#if $inventory.length > 0}
 					<div class="inv-recent-list">
 						{#each $inventory.slice(0, 3) as item}
@@ -234,39 +246,8 @@
 			</div>
 		</div>
 
-		<!-- ── FLOWERS SUMMARY (preset only) ─────────────────── -->
-		{#if $preset === 'flowers'}
-		<div class="bento-card bento-flowers">
-			<div class="bento-card-header accent-flowers">
-				<span class="bento-icon">🌸</span>
-				<span class="bento-label">{$t('bento_flowers_title')}</span>
-				<a href="/flowers" class="bento-view-all">{$t('bento_view_all')}</a>
-			</div>
-			<div class="bento-card-body">
-				<div class="flowers-kpi-grid">
-					<div class="flowers-kpi">
-						<span class="flowers-kpi-val color-raw">{$flowerFinancials.totalRaw}</span>
-						<span class="flowers-kpi-lbl">{$t('flowers_raw_stock')}</span>
-					</div>
-					<div class="flowers-kpi">
-						<span class="flowers-kpi-val color-pkg">{$flowerFinancials.totalPkg}</span>
-						<span class="flowers-kpi-lbl">{$t('flowers_total_packs')}</span>
-					</div>
-					<div class="flowers-kpi">
-						<span class="flowers-kpi-val color-potential">{$flowerFinancials.potentialPacks}</span>
-						<span class="flowers-kpi-lbl">{$t('flowers_potential_packs')}</span>
-					</div>
-					<div class="flowers-kpi">
-						<span class="flowers-kpi-val color-revenue">{fmt($flowerFinancials.packValue)}</span>
-						<span class="flowers-kpi-lbl">{$t('label_total_packs_value')}</span>
-					</div>
-				</div>
-			</div>
-		</div>
-		{/if}
-
 		<!-- ── ANALYTICS MINI-CHART ───────────────────────────── -->
-		<div class="bento-card bento-chart" class:bento-chart-wide={$preset !== 'flowers'}>
+		<div class="bento-card bento-chart bento-chart-wide">
 			<div class="bento-card-header accent-chart">
 				<span class="bento-icon">📈</span>
 				<span class="bento-label">{$t('bento_chart_title')}</span>
@@ -375,25 +356,24 @@
 		gap: 16px;
 	}
 
-	/* Grid placement */
+	/* Grid placement — row 1: sync(4) + orders(3) + inventory(5) = 12 */
 	.bento-sync      { grid-column: span 4; }
-	.bento-orders    { grid-column: span 4; }
-	.bento-inventory { grid-column: span 4; }
-	.bento-flowers   { grid-column: span 4; }
-	.bento-chart     { grid-column: span 4; }
+	.bento-orders    { grid-column: span 3; }
+	.bento-inventory { grid-column: span 5; }
+	/* row 2: chart(8) + activity(4) = 12 */
 	.bento-chart-wide { grid-column: span 8; }
 	.bento-activity  { grid-column: span 4; }
 
 	@media (max-width: 1024px) {
 		.bento-sync, .bento-orders, .bento-inventory,
-		.bento-flowers, .bento-chart, .bento-chart-wide, .bento-activity {
+		.bento-chart-wide, .bento-activity {
 			grid-column: span 6;
 		}
 	}
 
 	@media (max-width: 640px) {
 		.bento-sync, .bento-orders, .bento-inventory,
-		.bento-flowers, .bento-chart, .bento-chart-wide, .bento-activity {
+		.bento-chart-wide, .bento-activity {
 			grid-column: span 12;
 		}
 	}
@@ -431,7 +411,6 @@
 	.accent-sync     { border-left: 3px solid #60a5fa; }
 	.accent-orders   { border-left: 3px solid #fbbf24; }
 	.accent-inventory { border-left: 3px solid var(--color-primary); }
-	.accent-flowers  { border-left: 3px solid #f472b6; }
 	.accent-chart    { border-left: 3px solid var(--color-secondary); }
 	.accent-activity { border-left: 3px solid var(--color-tertiary); }
 
@@ -688,33 +667,20 @@
 		font-weight: 500;
 	}
 
-	/* ── Flowers block ── */
-	.flowers-kpi-grid {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 8px;
-	}
-
-	.flowers-kpi {
+	/* Flowers mini-row inside inventory tile */
+	.inv-flowers-row {
 		display: flex;
-		flex-direction: column;
-		gap: 3px;
-		padding: 10px;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+
+	.inv-flowers-item {
+		font-size: 0.78rem;
+		color: var(--color-on-surface);
+		opacity: 0.75;
 		background: var(--color-surface-container);
-		border-radius: 10px;
-	}
-
-	.flowers-kpi-val {
-		font-size: 1.15rem;
-		font-weight: 700;
-		letter-spacing: -0.02em;
-	}
-
-	.flowers-kpi-lbl {
-		font-size: 0.62rem;
-		text-transform: uppercase;
-		letter-spacing: 0.07em;
-		color: var(--color-outline);
+		padding: 4px 10px;
+		border-radius: 8px;
 	}
 
 	/* ── Chart block ── */
@@ -768,8 +734,5 @@
 	}
 
 	/* ── Color tokens ── */
-	.color-raw      { color: #60a5fa; }
-	.color-pkg      { color: #34d399; }
-	.color-potential { color: #fbbf24; }
 	.color-revenue  { color: var(--color-primary); }
 </style>

@@ -32,6 +32,26 @@ const MIGRATIONS: &[Migration] = &[
         name: "flower_erp",
         sql: include_str!("../../migrations/005_flower_erp.sql"),
     },
+    Migration {
+        version: 6,
+        name: "version_compat",
+        sql: include_str!("../../migrations/006_version_compat.sql"),
+    },
+    Migration {
+        version: 7,
+        name: "category_sort_bridge",
+        sql: include_str!("../../migrations/007_category_sort_bridge.sql"),
+    },
+    Migration {
+        version: 8,
+        name: "item_card_color",
+        sql: include_str!("../../migrations/008_item_card_color.sql"),
+    },
+    Migration {
+        version: 9,
+        name: "packing_orders",
+        sql: include_str!("../../migrations/009_packing_orders.sql"),
+    },
 ];
 
 pub fn run(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {

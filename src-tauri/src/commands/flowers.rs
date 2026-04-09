@@ -1,6 +1,7 @@
 use crate::db::Database;
 use crate::events::types::{
-    FlowerConstants, FlowerSort, CreateFlowerSortPayload, PackageResult, UpdateFlowerSortPayload,
+    CreatePackAssignmentPayload, FlowerConstants, FlowerSort, CreateFlowerSortPayload,
+    PackAssignment, PackageResult, UpdateFlowerSortPayload,
 };
 use tauri::State;
 use uuid::Uuid;
@@ -116,4 +117,42 @@ pub fn package_flowers(
 
     let log_id = Uuid::new_v4().to_string();
     crate::db::queries::package_flowers(&conn, &log_id, &sort_id, pack_count, flowers_per_pack)
+}
+
+// ── Pack Assignments (Task 9) ─────────────────────────────────
+
+#[tauri::command]
+pub fn create_pack_assignment(
+    db: State<'_, Database>,
+    payload: CreatePackAssignmentPayload,
+) -> Result<String, String> {
+    if payload.pack_count <= 0 {
+        return Err("pack_count must be > 0".to_string());
+    }
+    if payload.stems_per_pack <= 0 {
+        return Err("stems_per_pack must be > 0".to_string());
+    }
+    let id = Uuid::new_v4().to_string();
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::insert_pack_assignment(&conn, &id, &payload)?;
+    Ok(id)
+}
+
+#[tauri::command]
+pub fn get_pack_assignments(
+    db: State<'_, Database>,
+    order_id: Option<String>,
+) -> Result<Vec<PackAssignment>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::get_pack_assignments(&conn, order_id.as_deref())
+}
+
+#[tauri::command]
+pub fn update_pack_status(
+    db: State<'_, Database>,
+    id: String,
+    status: String,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::update_pack_status(&conn, &id, &status)
 }

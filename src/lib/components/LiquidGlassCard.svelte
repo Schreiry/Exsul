@@ -3,16 +3,27 @@
 	import { t } from '$lib/stores/i18n';
 	import { convertFileSrc } from '@tauri-apps/api/core';
 	import { globalCurrency, itemCurrencies, formatAmount } from '$lib/stores/currency';
+	import { preset } from '$lib/stores/preset';
+	import { commands } from '$lib/tauri/commands';
+	import { inventory } from '$lib/stores/inventory';
 
 	interface Props {
 		item: Item;
 		appDataDir?: string;
 		onclick?: () => void;
+		ondelete?: (item: Item) => void;
+		onduplicate?: (item: Item) => void;
+		onpack?: (item: Item) => void;
+		onsell?: (item: Item) => void;
 	}
 
-	let { item, appDataDir = '', onclick }: Props = $props();
+	let { item, appDataDir = '', onclick, ondelete, onduplicate, onpack, onsell }: Props = $props();
 
-	// Resolved currency: per-item override takes priority over global
+	let hovered = $state(false);
+	let longPressed = $state(false);
+	let stockHovered = $state(false);
+	let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+
 	let currency = $derived($itemCurrencies[item.id] ?? $globalCurrency);
 
 	function fmt(value: number): string {
@@ -32,6 +43,67 @@
 			? ((item.current_price - item.production_cost) / item.current_price) * 100
 			: null
 	);
+
+	let showActions = $derived(hovered || longPressed);
+
+	let cardBg = $derived(
+		item.card_color
+			? `background: linear-gradient(135deg, ${item.card_color}22 0%, var(--glass-bg) 60%);`
+			: undefined
+	);
+
+	// ── Touch: long-press detection ────────────────────────────
+	function onTouchStart() {
+		longPressTimer = setTimeout(() => {
+			longPressed = true;
+			navigator.vibrate?.(50);
+		}, 500);
+	}
+
+	function onTouchEnd() {
+		if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+	}
+
+	function onTouchMove() {
+		if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+		longPressed = false;
+	}
+
+	// ── Card action handlers ───────────────────────────────────
+	async function handleDelete(e: MouseEvent) {
+		e.stopPropagation();
+		if (!confirm(`Удалить "${item.name}"?`)) return;
+		if (ondelete) { ondelete(item); return; }
+		await commands.deleteItem(item.id);
+		await inventory.load();
+		longPressed = false;
+	}
+
+	async function handleDuplicate(e: MouseEvent) {
+		e.stopPropagation();
+		if (onduplicate) { onduplicate(item); return; }
+		await commands.duplicateItem(item.id);
+		await inventory.load();
+		longPressed = false;
+	}
+
+	function handlePack(e: MouseEvent) {
+		e.stopPropagation();
+		onpack?.(item);
+		longPressed = false;
+	}
+
+	function handleSell(e: MouseEvent) {
+		e.stopPropagation();
+		onsell?.(item);
+		longPressed = false;
+	}
+
+	async function adjustStock(delta: number, e: MouseEvent) {
+		e.stopPropagation();
+		await commands.adjustStock({ item_id: item.id, delta });
+		await inventory.load();
+	}
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -40,14 +112,30 @@
 	class:clickable={!!onclick}
 	role={onclick ? 'button' : undefined}
 	tabindex={onclick ? 0 : undefined}
-	{onclick}
+	style={cardBg}
+	onclick={() => { if (!longPressed) onclick?.(); }}
 	onkeydown={(e) => e.key === 'Enter' && onclick?.()}
+	onmouseenter={() => (hovered = true)}
+	onmouseleave={() => { hovered = false; }}
+	ontouchstart={onTouchStart}
+	ontouchend={onTouchEnd}
+	ontouchmove={onTouchMove}
 >
 	{#if imageSrc}
 		<div class="card-image">
 			<img src={imageSrc} alt={item.name} loading="lazy" />
 		</div>
 	{/if}
+
+	<!-- Action buttons overlay -->
+	<div class="card-actions" class:actions-visible={showActions}>
+		{#if $preset === 'flowers'}
+			<button class="card-action-btn" onclick={handlePack} title="Упаковать" aria-label="Упаковать">📦</button>
+		{/if}
+		<button class="card-action-btn sell" onclick={handleSell} title="Продать" aria-label="Продать">🛒</button>
+		<button class="card-action-btn" onclick={handleDuplicate} title="Копировать" aria-label="Копировать">⧉</button>
+		<button class="card-action-btn danger" onclick={handleDelete} title="Удалить" aria-label="Удалить">✕</button>
+	</div>
 
 	<div class="card-header">
 		<h3 class="card-title">{item.name}</h3>
@@ -61,10 +149,27 @@
 			<span class="mlabel">{$t('table_header_price')}</span>
 			<span class="mvalue color-price">{fmt(item.current_price)}</span>
 		</div>
-		<div class="metric">
-			<span class="mlabel">{$t('table_header_stock')}</span>
-			<span class="mvalue color-stock">{item.current_stock}</span>
+
+		<!-- Stock with quick ±1 adjust -->
+		<div
+			class="metric stock-metric"
+			role="group"
+			aria-label="Остаток"
+			onmouseenter={() => (stockHovered = true)}
+			onmouseleave={() => (stockHovered = false)}
+		>
+			<span class="mlabel">Остаток</span>
+			<div class="stock-adjust-row">
+				{#if stockHovered}
+					<button class="micro-btn" onclick={(e) => adjustStock(-1, e)} aria-label="−1">−</button>
+				{/if}
+				<span class="mvalue color-stock">{item.current_stock}</span>
+				{#if stockHovered}
+					<button class="micro-btn" onclick={(e) => adjustStock(+1, e)} aria-label="+1">+</button>
+				{/if}
+			</div>
 		</div>
+
 		<div class="metric">
 			<span class="mlabel">{$t('table_header_sold')}</span>
 			<span class="mvalue color-sold">{item.sold_count}</span>
@@ -76,9 +181,7 @@
 		{#if margin !== null}
 			<div class="metric">
 				<span class="mlabel">{$t('label_margin')}</span>
-				<span class="mvalue color-margin">
-					{margin.toFixed(1)}%
-				</span>
+				<span class="mvalue color-margin">{margin.toFixed(1)}%</span>
 			</div>
 		{/if}
 		{#if item.production_cost > 0}
@@ -116,7 +219,6 @@
 
 	.glass-card:hover {
 		transform: translateY(-4px) scale(1.012);
-		background: var(--glass-bg-hover);
 		box-shadow: var(--glass-shadow-hover);
 	}
 
@@ -124,6 +226,83 @@
 		transform: translateY(-1px) scale(1.004);
 		transition-duration: 0.1s;
 	}
+
+	/* ── Action buttons overlay ── */
+	.card-actions {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		display: flex;
+		gap: 5px;
+		opacity: 0;
+		transform: scale(0.85);
+		transition: opacity 200ms ease, transform 200ms var(--ease-overshoot);
+		z-index: 10;
+	}
+
+	.card-actions.actions-visible {
+		opacity: 1;
+		transform: scale(1);
+	}
+
+	.card-action-btn {
+		background: rgba(255, 255, 255, 0.12);
+		backdrop-filter: blur(16px) saturate(180%);
+		-webkit-backdrop-filter: blur(16px) saturate(180%);
+		border: 1px solid rgba(255, 255, 255, 0.18);
+		border-radius: 10px;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+		cursor: pointer;
+		font-size: 0.8rem;
+		padding: 5px 8px;
+		color: var(--color-on-surface);
+		transition: background 0.15s, transform 0.15s;
+		line-height: 1;
+	}
+
+	.card-action-btn:hover {
+		background: rgba(255, 255, 255, 0.22);
+		transform: translateY(-1px);
+	}
+
+	.card-action-btn.sell:hover {
+		background: rgba(52, 211, 153, 0.3);
+		border-color: rgba(52, 211, 153, 0.5);
+	}
+
+	.card-action-btn.danger:hover {
+		background: rgba(248, 113, 113, 0.3);
+		border-color: rgba(248, 113, 113, 0.5);
+		color: #f87171;
+	}
+
+	/* ── Stock quick-adjust ── */
+	.stock-metric { position: relative; }
+
+	.stock-adjust-row {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.micro-btn {
+		width: 16px;
+		height: 16px;
+		border-radius: 4px;
+		border: 1px solid var(--glass-border);
+		background: var(--glass-bg-hover);
+		color: var(--color-on-surface);
+		font-size: 0.7rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0;
+		line-height: 1;
+		transition: background 0.1s;
+	}
+
+	.micro-btn:hover { background: var(--color-primary); color: #0a0a0a; }
 
 	/* Travelling shimmer on hover */
 	.card-shimmer {

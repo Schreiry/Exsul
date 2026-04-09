@@ -13,10 +13,23 @@
 	let items = $state<DockItemConfig[]>([...propItems]);
 
 	let device = $state<DeviceClass>('desktop');
+	let windowWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 1200);
 
 	$effect(() => {
 		return viewport.subscribe((v) => (device = v.device));
 	});
+
+	$effect(() => {
+		if (typeof window === 'undefined') return;
+		const onResize = () => { windowWidth = window.innerWidth; };
+		window.addEventListener('resize', onResize);
+		return () => window.removeEventListener('resize', onResize);
+	});
+
+	// On narrow screens (<900px) always use bottom floating layout, never split rails
+	const effectiveDevice = $derived(
+		windowWidth < 900 ? ('tablet-portrait' as DeviceClass) : device
+	);
 
 	// Restore saved order from localStorage on mount
 	$effect(() => {
@@ -49,10 +62,10 @@
 	// Communicate dock dimensions to root so app-main can compensate
 	$effect(() => {
 		const root = document.documentElement;
-		if (device === 'tablet-landscape') {
+		if (effectiveDevice === 'tablet-landscape') {
 			root.style.setProperty('--dock-bottom-clearance', '0px');
 			root.style.setProperty('--dock-side-clearance', '76px');
-		} else if (device === 'mobile-portrait') {
+		} else if (effectiveDevice === 'mobile-portrait') {
 			root.style.setProperty('--dock-bottom-clearance', '72px');
 			root.style.setProperty('--dock-side-clearance', '0px');
 		} else {
@@ -63,7 +76,7 @@
 
 	// Drag-reorder is only enabled on non-split layouts (two separate rails
 	// can't share a drag context, so reordering is disabled there)
-	let canDrag = $derived(device !== 'tablet-landscape');
+	let canDrag = $derived(effectiveDevice !== 'tablet-landscape');
 
 	let midpoint = $derived(Math.ceil(items.length / 2));
 	let leftItems = $derived(items.slice(0, midpoint));
@@ -78,7 +91,7 @@
 	};
 </script>
 
-{#if device === 'tablet-landscape'}
+{#if effectiveDevice === 'tablet-landscape'}
 	<nav class="dock-rail dock-rail-left" role="navigation" aria-label="Primary">
 		{#each leftItems as item, i (item.id)}
 			<DockItem config={item} vertical index={i} draggable={false} />
@@ -90,7 +103,7 @@
 		{/each}
 	</nav>
 {:else}
-	<nav class="dock-bar {layoutClass[device]}" role="navigation" aria-label="Primary">
+	<nav class="dock-bar {layoutClass[effectiveDevice]}" role="navigation" aria-label="Primary">
 		{#each items as item, i (item.id)}
 			<DockItem
 				config={item}

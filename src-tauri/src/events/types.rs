@@ -38,6 +38,7 @@ pub struct UpdateItemPayload {
     pub category: Option<String>,
     pub category_id: Option<String>,
     pub production_cost: Option<f64>,
+    pub card_color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +79,7 @@ pub struct Item {
     pub updated_at: String,
     pub category_id: Option<String>,
     pub image_path: Option<String>,
+    pub card_color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -311,6 +313,37 @@ pub struct FlowerConstants {
     pub flowers_per_pack: f64,
     pub price_per_pack: f64,
     pub price_per_flower: f64,
+    #[serde(default = "default_pricing_mode")]
+    pub pricing_mode: String,
+}
+
+fn default_pricing_mode() -> String {
+    "pack".to_string()
+}
+
+// ============================================================
+// Pack Assignments (Task 9)
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackAssignment {
+    pub id: String,
+    pub sort_id: String,
+    pub order_id: Option<String>,
+    pub pack_count: i32,
+    pub stems_per_pack: i32,
+    pub status: String,
+    pub note: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePackAssignmentPayload {
+    pub sort_id: String,
+    pub order_id: Option<String>,
+    pub pack_count: i32,
+    pub stems_per_pack: i32,
+    pub note: Option<String>,
 }
 
 // ============================================================
@@ -334,6 +367,7 @@ pub struct WsPeerStatus {
     pub state: WsPeerState,
     pub last_sync: Option<String>,
     pub events_merged: u32,
+    pub app_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

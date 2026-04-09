@@ -7,12 +7,16 @@
 	import { commands } from '$lib/tauri/commands';
 	import LiquidGlassCard from '$lib/components/LiquidGlassCard.svelte';
 	import ItemDetailModal from '$lib/components/inventory/ItemDetailModal.svelte';
+	import PackAssignmentModal from '$lib/components/flowers/PackAssignmentModal.svelte';
+	import QuickSellModal from '$lib/components/inventory/QuickSellModal.svelte';
 	import type { CreateItemPayload, Item, Category, FlowerSort } from '$lib/tauri/types';
 
 	let showForm = $state(false);
 	let showCategoryManager = $state(false);
 	let showSortManager = $state(false);
 	let selectedItem = $state<Item | null>(null);
+	let packingItem = $state<Item | null>(null);
+	let sellingItem = $state<Item | null>(null);
 
 	// Load flower sorts when in flowers preset
 	$effect(() => {
@@ -92,8 +96,20 @@
 
 	let searchQuery = $state('');
 	let filterCategory = $state('');
+	let sortKey = $state<string | null>(null);
+	let sortDir = $state<'asc' | 'desc'>('asc');
+	let analyticsOpen = $state(typeof window !== 'undefined' && window.innerWidth >= 1024);
 
-	let filteredItems = $derived(
+	function setSort(key: string) {
+		if (sortKey === key) {
+			sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortKey = key;
+			sortDir = 'asc';
+		}
+	}
+
+	const filteredItems = $derived(
 		$inventory.filter((item) => {
 			const matchesSearch =
 				!searchQuery ||
@@ -103,6 +119,40 @@
 			return matchesSearch && matchesCategory;
 		})
 	);
+
+	const sortedItems = $derived.by(() => {
+		const base = filteredItems.slice();
+		const key = sortKey;
+		if (!key) return base;
+		return base.sort((a, b) => {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const va = (a as any)[key], vb = (b as any)[key];
+			const cmp =
+				typeof va === 'string'
+					? va.localeCompare(vb, ['ru', 'en'], { sensitivity: 'base' })
+					: (va as number) - (vb as number);
+			return sortDir === 'asc' ? cmp : -cmp;
+		});
+	});
+
+	const analytics = $derived({
+		totalItems: $inventory.length,
+		totalStock: $inventory.reduce((s, i) => s + i.current_stock, 0),
+		totalCost: $inventory.reduce((s, i) => s + i.production_cost * i.current_stock, 0),
+		totalValue: $inventory.reduce((s, i) => s + i.current_price * i.current_stock, 0),
+		avgMargin: (() => {
+			const totalStock = $inventory.reduce((s, i) => s + i.current_stock, 0);
+			if (totalStock === 0) return 0;
+			const weightedMargin = $inventory.reduce((s, i) => {
+				const margin = i.current_price > 0
+					? (i.current_price - i.production_cost) / i.current_price
+					: 0;
+				return s + margin * i.current_stock;
+			}, 0);
+			return Math.round((weightedMargin / totalStock) * 100);
+		})(),
+		totalSold: $inventory.reduce((s, i) => s + i.sold_count, 0),
+	});
 
 	// ── Category manager state ─────────────────────────────────
 	let newCatName = $state('');
@@ -173,6 +223,14 @@
 		formData.category = cat?.name ?? '';
 	}
 
+	async function handleDeleteAll() {
+		const count = $inventory.length;
+		if (count === 0) return;
+		if (!confirm(`Удалить все ${count} товаров? Это действие необратимо.`)) return;
+		await commands.deleteAllItems();
+		await inventory.load();
+	}
+
 	async function handleSubmit() {
 		if (!formData.name || formData.price <= 0) return;
 		const newId = await inventory.addItem({
@@ -216,6 +274,11 @@
 			>
 				{$t('action_manage_categories')}
 			</button>
+			{#if $inventory.length > 0}
+				<button class="btn-danger" onclick={handleDeleteAll} title="Удалить все товары">
+					🗑 Очистить
+				</button>
+			{/if}
 			<button class="btn-primary" onclick={() => { showForm = !showForm; showCategoryManager = false; showSortManager = false; }}>
 				{showForm ? $t('action_cancel') : $t('action_add_item')}
 			</button>
@@ -353,6 +416,7 @@
 							const sort = $flowerSorts.find((s) => s.id === id);
 							if (sort) {
 								formData.category = sort.name;
+								formData.category_id = sort.id; // critical: link item → sort
 								if (sort.sell_price_stem > 0 && !formData.price) formData.price = sort.sell_price_stem;
 							}
 						}}>
@@ -393,6 +457,42 @@
 		</form>
 	{/if}
 
+	<!-- ── Analytics Panel (Task 7) ──────────────────────────── -->
+	<div class="analytics-toggle-row">
+		<button class="analytics-toggle btn-secondary" onclick={() => (analyticsOpen = !analyticsOpen)}>
+			{analyticsOpen ? '▲' : '▼'} Аналитика склада
+		</button>
+	</div>
+	<div class="analytics-panel" class:analytics-open={analyticsOpen}>
+		<div class="analytics-grid">
+			<div class="analytics-kpi">
+				<span class="analytics-val">{analytics.totalItems}</span>
+				<span class="analytics-lbl">Товаров</span>
+			</div>
+			<div class="analytics-kpi">
+				<span class="analytics-val">{analytics.totalStock}</span>
+				<span class="analytics-lbl">На складе</span>
+			</div>
+			<div class="analytics-kpi">
+				<span class="analytics-val">{analytics.totalCost.toFixed(0)}</span>
+				<span class="analytics-lbl">Себест. (∑)</span>
+			</div>
+			<div class="analytics-kpi">
+				<span class="analytics-val">{analytics.totalValue.toFixed(0)}</span>
+				<span class="analytics-lbl">Стоимость (∑)</span>
+			</div>
+			<div class="analytics-kpi">
+				<span class="analytics-val">{analytics.avgMargin}%</span>
+				<span class="analytics-lbl">Ср. маржа</span>
+			</div>
+			<div class="analytics-kpi">
+				<span class="analytics-val">{analytics.totalSold}</span>
+				<span class="analytics-lbl">Продано</span>
+			</div>
+		</div>
+	</div>
+
+	<!-- ── Filters & Sort (Task 6) ──────────────────────────── -->
 	<div class="filters">
 		<input
 			type="text"
@@ -400,17 +500,48 @@
 			placeholder={$t('hint_search')}
 			bind:value={searchQuery}
 		/>
-		<select class="category-filter" bind:value={filterCategory}>
-			<option value="">{$t('status_all')}</option>
-			{#each $categoryStrings as cat}
-				<option value={cat}>{cat}</option>
+		{#if $preset === 'flowers'}
+			<select class="category-filter" bind:value={filterCategory}>
+				<option value="">— Все сорта —</option>
+				{#each $flowerSorts as sort}
+					<option value={sort.name}>{sort.name}{sort.variety ? ` — ${sort.variety}` : ''}</option>
+				{/each}
+			</select>
+		{:else}
+			<select class="category-filter" bind:value={filterCategory}>
+				<option value="">{$t('status_all')}</option>
+				{#each $categoryStrings as cat}
+					<option value={cat}>{cat}</option>
+				{/each}
+			</select>
+		{/if}
+		<div class="sort-pills">
+			{#each [
+				{ key: 'name',          label: 'А-Я' },
+				{ key: 'current_price', label: '₽' },
+				{ key: 'sold_count',    label: '#' },
+				{ key: 'current_stock', label: 'Ост.' },
+			] as s}
+				<button
+					class="sort-pill"
+					class:active={sortKey === s.key}
+					onclick={() => setSort(s.key)}
+				>
+					{s.label}{sortKey === s.key ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+				</button>
 			{/each}
-		</select>
+		</div>
 	</div>
 
 	<div class="items-grid">
-		{#each filteredItems as item (item.id)}
-			<LiquidGlassCard {item} appDataDir={appDataDirPath} onclick={() => (selectedItem = item)} />
+		{#each sortedItems as item (item.id)}
+			<LiquidGlassCard
+				{item}
+				appDataDir={appDataDirPath}
+				onclick={() => (selectedItem = item)}
+				onpack={(it) => (packingItem = it)}
+				onsell={(it) => (sellingItem = it)}
+			/>
 		{:else}
 			<div class="empty-state">{$t('empty_no_items')}</div>
 		{/each}
@@ -419,6 +550,16 @@
 
 <!-- Item detail modal -->
 <ItemDetailModal item={selectedItem} onclose={() => (selectedItem = null)} appDataDir={appDataDirPath} />
+
+<!-- Pack assignment modal (flowers preset) -->
+{#if packingItem}
+	<PackAssignmentModal item={packingItem} onclose={() => (packingItem = null)} />
+{/if}
+
+<!-- Quick sell modal -->
+{#if sellingItem}
+	<QuickSellModal item={sellingItem} onclose={() => (sellingItem = null)} />
+{/if}
 
 <style>
 	.inventory-page { max-width: 1000px; margin: 0 auto; }
@@ -469,6 +610,20 @@
 
 	.btn-secondary:hover { background: var(--glass-bg-hover); }
 	.btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+	.btn-danger {
+		background: rgba(248, 113, 113, 0.1);
+		border: 1px solid rgba(248, 113, 113, 0.3);
+		color: #f87171;
+		padding: 8px 16px;
+		border-radius: 10px;
+		font-size: 0.875rem;
+		cursor: pointer;
+		transition: background 0.15s;
+		font-family: inherit;
+	}
+
+	.btn-danger:hover { background: rgba(248, 113, 113, 0.2); }
 
 	/* ── Category manager ── */
 	.cat-panel {
@@ -661,11 +816,70 @@
 
 	.preview-thumbnail { max-width: 100%; max-height: 120px; border-radius: 6px; object-fit: contain; }
 
-	/* ── Filters ── */
-	.filters { display: flex; gap: 10px; margin-bottom: 20px; }
+	/* ── Analytics Panel (Task 7) ── */
+	.analytics-toggle-row {
+		margin-bottom: 8px;
+	}
+
+	.analytics-toggle {
+		font-size: 0.78rem;
+		padding: 5px 12px;
+	}
+
+	.analytics-panel {
+		overflow: hidden;
+		max-height: 0;
+		transition: max-height 320ms ease, opacity 320ms ease;
+		opacity: 0;
+		margin-bottom: 0;
+	}
+
+	.analytics-panel.analytics-open {
+		max-height: 120px;
+		opacity: 1;
+		margin-bottom: 16px;
+	}
+
+	.analytics-grid {
+		display: grid;
+		grid-template-columns: repeat(6, 1fr);
+		gap: 10px;
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
+		border-radius: 14px;
+		padding: 14px 16px;
+	}
+
+	@media (max-width: 768px) {
+		.analytics-grid { grid-template-columns: repeat(3, 1fr); }
+	}
+
+	.analytics-kpi {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+
+	.analytics-val {
+		font-size: 1.05rem;
+		font-weight: 700;
+		color: var(--color-on-surface);
+		letter-spacing: -0.02em;
+	}
+
+	.analytics-lbl {
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--color-outline);
+	}
+
+	/* ── Filters (Task 6) ── */
+	.filters { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
 
 	.search-input {
-		flex: 1;
+		flex: 0 0 280px;
 		background: var(--glass-bg);
 		border: 1px solid var(--glass-border);
 		border-radius: 10px;
@@ -675,6 +889,10 @@
 		outline: none;
 		transition: border-color 0.2s;
 		font-family: inherit;
+	}
+
+	@media (max-width: 640px) {
+		.search-input { flex: 1 1 100%; }
 	}
 
 	.search-input:focus { border-color: var(--color-primary); }
@@ -689,6 +907,36 @@
 		min-width: 160px;
 		font-family: inherit;
 		outline: none;
+	}
+
+	/* Sort pills */
+	.sort-pills {
+		display: flex;
+		gap: 5px;
+		flex-wrap: wrap;
+		margin-left: auto;
+	}
+
+	.sort-pill {
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		color: var(--color-on-surface);
+		border-radius: 20px;
+		padding: 5px 11px;
+		font-size: 0.78rem;
+		cursor: pointer;
+		font-family: inherit;
+		transition: background 0.15s, border-color 0.15s, color 0.15s;
+		white-space: nowrap;
+	}
+
+	.sort-pill:hover { background: var(--glass-bg-hover); }
+
+	.sort-pill.active {
+		background: var(--color-primary);
+		border-color: var(--color-primary);
+		color: #0a0a0a;
+		font-weight: 700;
 	}
 
 	/* ── Grid ── */

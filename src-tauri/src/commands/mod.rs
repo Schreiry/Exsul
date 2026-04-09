@@ -7,4 +7,5 @@ pub mod inventory;
 pub mod orders;
 pub mod preset;
 pub mod sync;
+pub mod version;
 pub mod ws;

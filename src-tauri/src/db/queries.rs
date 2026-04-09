@@ -1,8 +1,9 @@
 use crate::events::types::{
     AddOrderItemPayload, AddTrustedNodePayload, AuditLog, AuditLogFilter, Category,
-    CreateCategoryPayload, CreateFlowerSortPayload, EventRecord, FlowerConstants, FlowerSort,
-    Item, Order, OrderItem, PackageResult, PriceRecord, SyncPeer, TrustedNode,
-    UpdateCategoryPayload, UpdateFlowerSortPayload, CreateOrderPayload,
+    CreateCategoryPayload, CreateFlowerSortPayload, CreatePackAssignmentPayload, EventRecord,
+    FlowerConstants, FlowerSort, Item, Order, OrderItem, PackAssignment, PackageResult,
+    PriceRecord, SyncPeer, TrustedNode, UpdateCategoryPayload, UpdateFlowerSortPayload,
+    CreateOrderPayload,
 };
 use rusqlite::{params, Connection};
 
@@ -15,7 +16,7 @@ pub fn get_items(conn: &Connection) -> Result<Vec<Item>, String> {
         .prepare(
             "SELECT id, name, category, initial_price, current_price, production_cost,
                     current_stock, sold_count, revenue, created_at, updated_at,
-                    category_id, image_path
+                    category_id, image_path, card_color
              FROM items ORDER BY updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
@@ -36,6 +37,7 @@ pub fn get_items(conn: &Connection) -> Result<Vec<Item>, String> {
                 updated_at: row.get(10)?,
                 category_id: row.get(11)?,
                 image_path: row.get(12)?,
+                card_color: row.get(13)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -49,7 +51,7 @@ pub fn get_item_by_id(conn: &Connection, item_id: &str) -> Result<Option<Item>, 
     let result = conn.query_row(
         "SELECT id, name, category, initial_price, current_price, production_cost,
                 current_stock, sold_count, revenue, created_at, updated_at,
-                category_id, image_path
+                category_id, image_path, card_color
          FROM items WHERE id = ?1",
         [item_id],
         |row| {
@@ -67,6 +69,7 @@ pub fn get_item_by_id(conn: &Connection, item_id: &str) -> Result<Option<Item>, 
                 updated_at: row.get(10)?,
                 category_id: row.get(11)?,
                 image_path: row.get(12)?,
+                card_color: row.get(13)?,
             })
         },
     );
@@ -858,11 +861,19 @@ pub fn get_flower_constants(conn: &Connection) -> Result<FlowerConstants, String
         )
         .unwrap_or(0.0)
     }
+    let pricing_mode = conn
+        .query_row(
+            "SELECT value FROM local_config WHERE key = 'pricing_mode'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| "pack".to_string());
     Ok(FlowerConstants {
         weight_per_flower: get_val(conn, "weight_per_flower"),
         flowers_per_pack: get_val(conn, "flowers_per_pack"),
         price_per_pack: get_val(conn, "price_per_pack"),
         price_per_flower: get_val(conn, "price_per_flower"),
+        pricing_mode,
     })
 }
 
@@ -880,5 +891,171 @@ pub fn set_flower_constants(conn: &Connection, c: &FlowerConstants) -> Result<()
         )
         .map_err(|e| e.to_string())?;
     }
+    // pricing_mode is stored as a text key-value in a separate config entry
+    conn.execute(
+        "INSERT OR REPLACE INTO local_config (key, value) VALUES ('pricing_mode', ?1)",
+        params![c.pricing_mode],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================
+// Items — delete & duplicate (local ops, no event sourcing)
+// ============================================================
+
+pub fn delete_item(conn: &Connection, item_id: &str) -> Result<(), String> {
+    // Remove FK references first to avoid constraint violations
+    conn.execute("DELETE FROM order_items WHERE item_id = ?1", [item_id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM items WHERE id = ?1", [item_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn delete_all_items(conn: &Connection) -> Result<usize, String> {
+    conn.execute_batch(
+        "DELETE FROM order_items WHERE item_id IN (SELECT id FROM items);
+         DELETE FROM item_prices WHERE item_id IN (SELECT id FROM items);",
+    )
+    .map_err(|e| e.to_string())?;
+    let deleted = conn
+        .execute("DELETE FROM items", [])
+        .map_err(|e| e.to_string())?;
+    Ok(deleted)
+}
+
+pub fn duplicate_item(conn: &Connection, source_id: &str, new_id: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO items (id, name, category, initial_price, current_price, production_cost,
+                            current_stock, sold_count, revenue, created_at, updated_at,
+                            category_id, image_path, card_color)
+         SELECT ?2,
+                name || ' (копия)',
+                category,
+                initial_price,
+                current_price,
+                production_cost,
+                current_stock,
+                0,
+                0.0,
+                strftime('%Y-%m-%dT%H:%M:%f', 'now'),
+                strftime('%Y-%m-%dT%H:%M:%f', 'now'),
+                category_id,
+                image_path,
+                card_color
+         FROM items WHERE id = ?1",
+        params![source_id, new_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn update_item_card_color(conn: &Connection, item_id: &str, color: Option<&str>) -> Result<(), String> {
+    conn.execute(
+        "UPDATE items SET card_color = ?1, updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?2",
+        params![color, item_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================
+// Category — Sort Bridge (Task 2)
+// ============================================================
+
+pub fn sync_flower_sorts_to_categories(conn: &Connection) -> Result<(), String> {
+    // For each flower sort, ensure a matching category entry exists (id = sort.id)
+    conn.execute_batch(
+        "INSERT OR IGNORE INTO categories (id, name, color, sort_id)
+         SELECT id, name, color_hex, id FROM flower_sorts;
+         UPDATE categories SET
+             name     = fs.name,
+             color    = fs.color_hex,
+             sort_id  = fs.id
+         FROM flower_sorts fs WHERE categories.id = fs.id;",
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================
+// Pack Assignments (Task 9)
+// ============================================================
+
+pub fn insert_pack_assignment(
+    conn: &Connection,
+    id: &str,
+    payload: &CreatePackAssignmentPayload,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO pack_assignments (id, sort_id, order_id, pack_count, stems_per_pack, note)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            id,
+            payload.sort_id,
+            payload.order_id,
+            payload.pack_count,
+            payload.stems_per_pack,
+            payload.note,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_pack_assignments(
+    conn: &Connection,
+    order_id: Option<&str>,
+) -> Result<Vec<PackAssignment>, String> {
+    let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match order_id {
+        Some(oid) => (
+            "SELECT id, sort_id, order_id, pack_count, stems_per_pack, status, note, created_at
+             FROM pack_assignments WHERE order_id = ?1 ORDER BY created_at DESC"
+                .to_string(),
+            vec![Box::new(oid.to_string()) as Box<dyn rusqlite::types::ToSql>],
+        ),
+        None => (
+            "SELECT id, sort_id, order_id, pack_count, stems_per_pack, status, note, created_at
+             FROM pack_assignments ORDER BY created_at DESC"
+                .to_string(),
+            vec![],
+        ),
+    };
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|p| p.as_ref()).collect();
+
+    let assignments = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok(PackAssignment {
+                id: row.get(0)?,
+                sort_id: row.get(1)?,
+                order_id: row.get(2)?,
+                pack_count: row.get(3)?,
+                stems_per_pack: row.get(4)?,
+                status: row.get(5)?,
+                note: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(assignments)
+}
+
+pub fn update_pack_status(conn: &Connection, id: &str, status: &str) -> Result<(), String> {
+    match status {
+        "prepared" | "loaded" | "delivered" => {}
+        other => return Err(format!("Invalid status: {}", other)),
+    }
+    conn.execute(
+        "UPDATE pack_assignments SET status = ?2 WHERE id = ?1",
+        params![id, status],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }

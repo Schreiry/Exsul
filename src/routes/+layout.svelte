@@ -27,9 +27,6 @@
 	const dockItems = $derived<DockItemConfig[]>([
 		{ id: 'dashboard',  icon: IconDashboard,  label: $t('nav_dashboard'),  href: '/' },
 		{ id: 'inventory',  icon: IconInventory,  label: $t('nav_inventory'),  href: '/inventory' },
-		...(($preset === 'flowers')
-			? [{ id: 'flowers', icon: IconInventory, label: $t('nav_flowers'), href: '/flowers' }]
-			: []),
 		{ id: 'analytics',  icon: IconAnalytics,  label: $t('nav_analytics'),  href: '/analytics' },
 		{ id: 'orders',     icon: IconOrders,     label: $t('nav_orders'),     href: '/orders' },
 		{ id: 'audit',      icon: IconAudit,      label: $t('nav_audit'),      href: '/audit' },

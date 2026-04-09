@@ -5,13 +5,52 @@
 	import { preset } from '$lib/stores/preset';
 	import { inventory } from '$lib/stores/inventory';
 	import { categories } from '$lib/stores/categories';
+	import { flowerConstants } from '$lib/stores/flowers';
 	import { commands } from '$lib/tauri/commands';
 	import { globalCurrency, CURRENCIES } from '$lib/stores/currency';
-	import type { AppPreset } from '$lib/tauri/types';
+	import type { AppPreset, PricingMode } from '$lib/tauri/types';
 
 	let currentColor = $state('#34d399');
 	let backupStatus = $state('');
 	let confirmPreset = $state<AppPreset | null>(null);
+
+	// Flower constants draft (only when preset=flowers)
+	let constantsDraft = $state({
+		weight_per_flower: 0.05,
+		flowers_per_pack: 10,
+		price_per_pack: 500,
+		price_per_flower: 50,
+		pricing_mode: 'pack' as PricingMode,
+	});
+	let constantsSaving = $state(false);
+
+	$effect(() => {
+		if ($preset === 'flowers') {
+			flowerConstants.load();
+		}
+	});
+
+	$effect(() => {
+		const c = $flowerConstants;
+		if (c) {
+			constantsDraft = {
+				weight_per_flower: c.weight_per_flower,
+				flowers_per_pack: c.flowers_per_pack,
+				price_per_pack: c.price_per_pack,
+				price_per_flower: c.price_per_flower,
+				pricing_mode: (c.pricing_mode ?? 'pack') as PricingMode,
+			};
+		}
+	});
+
+	async function handleSaveConstants() {
+		constantsSaving = true;
+		try {
+			await flowerConstants.save(constantsDraft);
+		} finally {
+			constantsSaving = false;
+		}
+	}
 
 	$effect(() => {
 		return seedColor.subscribe((c) => (currentColor = c));
@@ -26,14 +65,41 @@
 		seedColor.set(input.value);
 	}
 
+	let importBusy = $state(false);
+
 	async function handleExportBackup() {
 		try {
 			backupStatus = '…';
-			const path = await commands.exportBackup();
-			backupStatus = `${$t('backup_exported')} ${path}`;
+			await commands.exportBackup();
+			backupStatus = '✓ Бэкап создан';
 		} catch (err) {
 			backupStatus = `${$t('backup_error')} ${err}`;
 		}
+	}
+
+	async function handleImportBackup() {
+		if (!confirm('Восстановить данные из резервной копии? Текущие данные будут заменены.')) return;
+		// Use native <input type="file"> — no extra plugin needed
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.bak';
+		input.onchange = async () => {
+			const file = input.files?.[0];
+			if (!file) return;
+			importBusy = true;
+			backupStatus = '…';
+			try {
+				const buffer = await file.arrayBuffer();
+				const bytes = Array.from(new Uint8Array(buffer));
+				await commands.importBackupData(bytes);
+				backupStatus = '✓ Данные восстановлены. Перезапустите приложение.';
+			} catch (err) {
+				backupStatus = `Ошибка импорта: ${err}`;
+			} finally {
+				importBusy = false;
+			}
+		};
+		input.click();
 	}
 
 	async function handleConfirmPreset() {
@@ -186,13 +252,63 @@
 		</div>
 	</section>
 
+	<!-- ── Flower Constants (preset=flowers only) ────────────── -->
+	{#if $preset === 'flowers'}
+	<section class="section" id="flowers-constants">
+		<h2>🌸 Параметры цветочного бизнеса</h2>
+		<div class="constants-form">
+			<div class="const-field">
+				<label class="const-label" for="fpp">Цветков в упаковке (шт.)</label>
+				<input id="fpp" class="const-input" type="number" step="1" min="1" bind:value={constantsDraft.flowers_per_pack} />
+			</div>
+			<div class="const-field">
+				<label class="const-label" for="wpf">Вес стебля (кг)</label>
+				<input id="wpf" class="const-input" type="number" step="0.001" min="0" bind:value={constantsDraft.weight_per_flower} />
+			</div>
+			<div class="const-field">
+				<label class="const-label" for="ppp">Цена упаковки</label>
+				<input id="ppp" class="const-input" type="number" step="1" min="0" bind:value={constantsDraft.price_per_pack} />
+			</div>
+			<div class="const-field">
+				<label class="const-label" for="ppf">Цена стебля</label>
+				<input id="ppf" class="const-input" type="number" step="0.5" min="0" bind:value={constantsDraft.price_per_flower} />
+			</div>
+		</div>
+		<div class="const-field" style="margin-top:12px">
+			<span class="const-label">Логика ценообразования</span>
+			<div class="pricing-mode-row">
+				{#each [['pack','По упаковкам'],['stem','По стеблям'],['mixed','Смешанная']] as [val, lbl]}
+					<label class="pricing-mode-option">
+						<input
+							type="radio"
+							name="pricing_mode"
+							value={val}
+							checked={constantsDraft.pricing_mode === val}
+							onchange={() => (constantsDraft.pricing_mode = val as PricingMode)}
+						/>
+						{lbl}
+					</label>
+				{/each}
+			</div>
+		</div>
+		<button class="btn-primary" style="margin-top:16px" onclick={handleSaveConstants} disabled={constantsSaving}>
+			{constantsSaving ? '…' : $t('action_save')}
+		</button>
+	</section>
+	{/if}
+
 	<!-- ── Backup ─────────────────────────────────────────────── -->
 	<section class="section">
 		<h2>{$t('label_backup')}</h2>
 		<p class="hint">{$t('hint_backup_description')}</p>
-		<button class="btn-primary" onclick={handleExportBackup}>
-			{$t('action_export_backup')}
-		</button>
+		<div class="backup-actions">
+			<button class="btn-primary" onclick={handleExportBackup}>
+				📥 {$t('action_export_backup')}
+			</button>
+			<button class="btn-secondary" onclick={handleImportBackup} disabled={importBusy}>
+				{importBusy ? '…' : '📤 Восстановить из файла'}
+			</button>
+		</div>
 		{#if backupStatus}
 			<p class="backup-status">{backupStatus}</p>
 		{/if}
@@ -482,6 +598,85 @@
 		color: var(--color-on-surface);
 		opacity: 0.6;
 		margin-top: 8px;
-		word-break: break-all;
+	}
+
+	.backup-actions {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
+		align-items: center;
+	}
+
+	.btn-secondary {
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		color: var(--color-on-surface);
+		padding: 8px 20px;
+		border-radius: 8px;
+		cursor: pointer;
+		font-size: 0.875rem;
+		font-family: inherit;
+		transition: background 0.15s;
+	}
+
+	.btn-secondary:hover { background: var(--glass-bg-hover); }
+	.btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+	.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+	/* ── Flower constants form ─── */
+	.constants-form {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+		margin-bottom: 4px;
+	}
+
+	.const-field {
+		display: flex;
+		flex-direction: column;
+		gap: 5px;
+	}
+
+	.const-label {
+		font-size: 0.7rem;
+		color: var(--color-outline);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		font-weight: 500;
+	}
+
+	.const-input {
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		border-radius: 8px;
+		padding: 8px 12px;
+		color: var(--color-on-surface);
+		font-size: 0.875rem;
+		font-family: inherit;
+		outline: none;
+		transition: border-color 0.2s;
+	}
+
+	.const-input:focus { border-color: var(--color-primary); }
+
+	.pricing-mode-row {
+		display: flex;
+		gap: 16px;
+		flex-wrap: wrap;
+		margin-top: 4px;
+	}
+
+	.pricing-mode-option {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.85rem;
+		color: var(--color-on-surface);
+		cursor: pointer;
+	}
+
+	.pricing-mode-option input[type="radio"] {
+		accent-color: var(--color-primary);
+		cursor: pointer;
 	}
 </style>

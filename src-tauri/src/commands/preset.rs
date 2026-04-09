@@ -18,7 +18,14 @@ pub fn set_app_preset(db: State<'_, Database>, preset: String) -> Result<(), Str
         other => return Err(format!("Invalid preset: {}", other)),
     };
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    crate::db::queries::set_local_config(&conn, "app_preset", &preset)
+    crate::db::queries::set_local_config(&conn, "app_preset", &preset)?;
+    // Sync flower sorts → categories when switching to flowers preset
+    if preset == "flowers" {
+        if let Err(e) = crate::db::queries::sync_flower_sorts_to_categories(&conn) {
+            log::warn!("sort→category sync failed: {}", e);
+        }
+    }
+    Ok(())
 }
 
 // ── Trusted Nodes ────────────────────────────────────────────

@@ -17,6 +17,13 @@
 	let editMode = $state(false);
 	let saving = $state(false);
 
+	// Preset colors for card_color picker
+	const PRESET_COLORS = [
+		'#f472b6', '#fb923c', '#facc15', '#4ade80', '#34d399',
+		'#22d3ee', '#60a5fa', '#a78bfa', '#e879f9', '#94a3b8',
+		'#f87171', '#ffffff',
+	];
+
 	// Draft for edit mode — a flat copy of the item fields
 	let draft = $state({
 		name: '',
@@ -24,6 +31,8 @@
 		production_cost: 0,
 		new_price: 0,
 		stock_delta: 0,
+		sold_delta: 0,
+		card_color: '',
 	});
 
 	// Image upload
@@ -40,6 +49,8 @@
 				production_cost: item.production_cost,
 				new_price: item.current_price,
 				stock_delta: 0,
+				sold_delta: 0,
+				card_color: item.card_color ?? '',
 			};
 			editMode = false;
 			previewUrl = null;
@@ -107,12 +118,18 @@
 		if (!item) return;
 		saving = true;
 		try {
-			// Update metadata
+			// Update business metadata via store
 			await inventory.updateItem(item.id, {
 				name: draft.name || undefined,
 				category: draft.category || undefined,
 				production_cost: draft.production_cost,
 			});
+
+			// card_color is UI metadata — update directly via command
+			if (draft.card_color !== (item.card_color ?? '')) {
+				await commands.updateItem({ item_id: item.id, card_color: draft.card_color });
+				await inventory.load();
+			}
 
 			// Price change
 			if (draft.new_price !== item.current_price && draft.new_price > 0) {
@@ -122,6 +139,11 @@
 			// Stock adjustment
 			if (draft.stock_delta !== 0) {
 				await inventory.adjustStock(item.id, draft.stock_delta);
+			}
+
+			// Sale recording
+			if (draft.sold_delta > 0) {
+				await commands.recordSale({ item_id: item.id, quantity: draft.sold_delta });
 			}
 
 			// Image upload
@@ -250,6 +272,31 @@
 				<div class="field">
 					<label class="field-label" for="edit-stock">{$t('label_add_stock')} (+/−)</label>
 					<input id="edit-stock" class="field-input" type="number" bind:value={draft.stock_delta} />
+					<span class="field-hint">Текущий остаток: {item.current_stock} шт.</span>
+				</div>
+				<div class="field">
+					<label class="field-label" for="edit-sold">Продать (+)</label>
+					<input id="edit-sold" class="field-input" type="number" min="0" bind:value={draft.sold_delta} />
+				</div>
+				<div class="field color-field">
+					<span class="field-label">Цвет карточки</span>
+					<div class="color-swatches">
+						{#each PRESET_COLORS as color}
+							<button
+								class="color-swatch"
+								class:active={draft.card_color === color}
+								style:background={color}
+								onclick={() => (draft.card_color = draft.card_color === color ? '' : color)}
+								aria-label={color}
+							></button>
+						{/each}
+						<input
+							type="color"
+							class="color-custom"
+							bind:value={draft.card_color}
+							title="Свой цвет"
+						/>
+					</div>
 				</div>
 				<div class="field">
 					<label class="field-label" for="edit-currency">{$t('label_item_currency')}</label>
@@ -535,6 +582,48 @@
 	}
 
 	.btn-cancel:hover { background: var(--glass-bg-hover); }
+
+	/* Card color picker */
+	.color-field { grid-column: 1 / -1; }
+
+	.color-swatches {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+		align-items: center;
+	}
+
+	.color-swatch {
+		width: 24px;
+		height: 24px;
+		border-radius: 6px;
+		border: 2px solid transparent;
+		cursor: pointer;
+		transition: transform 0.15s, border-color 0.15s;
+		padding: 0;
+	}
+
+	.color-swatch:hover { transform: scale(1.15); }
+	.color-swatch.active { border-color: var(--color-on-surface); transform: scale(1.1); }
+
+	.color-custom {
+		width: 28px;
+		height: 24px;
+		border-radius: 6px;
+		border: 1px solid var(--glass-border);
+		cursor: pointer;
+		background: transparent;
+		padding: 0;
+	}
+
+	.color-custom::-webkit-color-swatch-wrapper { padding: 0; }
+	.color-custom::-webkit-color-swatch { border-radius: 5px; border: none; }
+
+	.field-hint {
+		font-size: 0.65rem;
+		color: var(--color-outline);
+		font-style: italic;
+	}
 
 	/* Order section */
 	.order-section {

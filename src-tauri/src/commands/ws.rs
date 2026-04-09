@@ -49,6 +49,7 @@ pub async fn get_ws_status(
             state: p.state.clone(),
             last_sync: p.last_sync.clone(),
             events_merged: p.events_merged,
+            app_version: p.app_version.clone(),
         })
         .collect();
     Ok(WsServerStatus {

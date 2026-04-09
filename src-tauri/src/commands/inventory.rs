@@ -3,6 +3,7 @@ use crate::events::{store, types::*};
 use crate::sync::hlc::HybridLogicalClock;
 use serde_json::json;
 use tauri::{AppHandle, Manager, State};
+use uuid::Uuid;
 
 #[tauri::command]
 pub fn add_item(
@@ -36,17 +37,35 @@ pub fn update_item(
     hlc: State<'_, HybridLogicalClock>,
     payload: UpdateItemPayload,
 ) -> Result<(), String> {
-    let data = json!({
-        "name": payload.name,
-        "category": payload.category,
-        "category_id": payload.category_id,
-        "production_cost": payload.production_cost,
-    });
+    // card_color is UI metadata — write directly, not via events
+    if let Some(ref color) = payload.card_color {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        crate::db::queries::update_item_card_color(
+            &conn,
+            &payload.item_id,
+            if color.is_empty() { None } else { Some(color.as_str()) },
+        )?;
+        drop(conn);
+    }
 
-    store::append_event(&db, &hlc, &payload.item_id, "item", "ItemUpdated", data.clone())?;
+    // Only emit event if there are business-relevant changes
+    if payload.name.is_some()
+        || payload.category.is_some()
+        || payload.category_id.is_some()
+        || payload.production_cost.is_some()
+    {
+        let data = json!({
+            "name": payload.name,
+            "category": payload.category,
+            "category_id": payload.category_id,
+            "production_cost": payload.production_cost,
+        });
 
-    if let Err(e) = store::append_audit_log(&db, "local", "ItemUpdated", data) {
-        log::warn!("audit log write failed: {}", e);
+        store::append_event(&db, &hlc, &payload.item_id, "item", "ItemUpdated", data.clone())?;
+
+        if let Err(e) = store::append_audit_log(&db, "local", "ItemUpdated", data) {
+            log::warn!("audit log write failed: {}", e);
+        }
     }
 
     Ok(())
@@ -120,6 +139,30 @@ pub fn change_price(
     }
 
     Ok(())
+}
+
+/// Delete an item directly from the projection (local-only, not event-sourced).
+/// Also removes dependent order_items to avoid FK violations.
+#[tauri::command]
+pub fn delete_item(db: State<'_, Database>, item_id: String) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::delete_item(&conn, &item_id)
+}
+
+/// Delete ALL items and their dependent records. Returns deleted count.
+#[tauri::command]
+pub fn delete_all_items(db: State<'_, Database>) -> Result<usize, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::delete_all_items(&conn)
+}
+
+/// Duplicate an item (copy with new UUID, reset sold_count & revenue).
+#[tauri::command]
+pub fn duplicate_item(db: State<'_, Database>, item_id: String) -> Result<String, String> {
+    let new_id = Uuid::new_v4().to_string();
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::duplicate_item(&conn, &item_id, &new_id)?;
+    Ok(new_id)
 }
 
 /// Saves a base64-encoded image to disk then records the path on the item.

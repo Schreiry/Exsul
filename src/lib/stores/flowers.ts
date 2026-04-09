@@ -92,6 +92,7 @@ const DEFAULT_CONSTANTS: FlowerConstants = {
 	flowers_per_pack: 10,
 	price_per_pack: 500,
 	price_per_flower: 50,
+	pricing_mode: 'pack',
 };
 
 function createConstantsStore() {

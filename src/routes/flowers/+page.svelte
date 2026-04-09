@@ -9,7 +9,7 @@
 		sortsBySpecies,
 	} from '$lib/stores/flowers';
 	import { t } from '$lib/stores/i18n';
-	import type { FlowerSort, FlowerConstants, UpdateFlowerSortPayload } from '$lib/tauri/types';
+	import type { FlowerSort } from '$lib/tauri/types';
 	import PackagingModal from '$lib/components/flowers/PackagingModal.svelte';
 
 	// ── Local state ───────────────────────────────────────────
@@ -19,14 +19,7 @@
 	let newName = $state('');
 	let newVariety = $state('');
 	let newColorHex = $state('#34d399');
-	let constantsDraft = $state<FlowerConstants>({ ...$flowerConstants });
-	let constantsEditing = $state(false);
 	let view = $state<'raw' | 'packaged' | 'all'>('all');
-
-	// Keep constantsDraft in sync when store updates
-	$effect(() => {
-		constantsDraft = { ...$flowerConstants };
-	});
 
 	onMount(async () => {
 		await flowerSorts.load();
@@ -69,11 +62,6 @@
 		await flowerSorts.remove(id);
 	}
 
-	async function handleSaveConstants() {
-		await flowerConstants.save(constantsDraft);
-		constantsEditing = false;
-	}
-
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
 
 	function fmtMoney(v: number) {
@@ -88,66 +76,15 @@
 <div class="page">
 
 	<!-- ═══════════════════════════════════════════════════════ -->
-	<!-- CONSTANTS ISLAND (detached, floats bottom-right)       -->
-	<!-- ═══════════════════════════════════════════════════════ -->
-	<div class="constants-island glass">
-		<div class="island-header">
-			<span class="island-title">{$t('flowers_constants')}</span>
-			{#if !constantsEditing}
-				<button class="island-edit-btn" onclick={() => (constantsEditing = true)}>✎</button>
-			{/if}
-		</div>
-
-		{#if constantsEditing}
-			<div class="constants-grid editing">
-				<label class="const-label">
-					{$t('flowers_weight_per_flower')}
-					<input class="glass-input" type="number" step="0.001" bind:value={constantsDraft.weight_per_flower} />
-				</label>
-				<label class="const-label">
-					{$t('flowers_per_pack')}
-					<input class="glass-input" type="number" step="1" bind:value={constantsDraft.flowers_per_pack} />
-				</label>
-				<label class="const-label">
-					{$t('flowers_price_per_pack')}
-					<input class="glass-input" type="number" step="10" bind:value={constantsDraft.price_per_pack} />
-				</label>
-				<label class="const-label">
-					{$t('flowers_price_per_flower')}
-					<input class="glass-input" type="number" step="1" bind:value={constantsDraft.price_per_flower} />
-				</label>
-			</div>
-			<div class="island-actions">
-				<button class="glass-btn accent" onclick={handleSaveConstants}>{$t('action_save')}</button>
-				<button class="glass-btn" onclick={() => { constantsEditing = false; constantsDraft = { ...$flowerConstants }; }}>{$t('action_cancel')}</button>
-			</div>
-		{:else}
-			<div class="constants-grid">
-				<div class="const-item">
-					<span class="const-key">{$t('flowers_weight_per_flower')}</span>
-					<span class="const-val badge purple">{$flowerConstants.weight_per_flower} кг</span>
-				</div>
-				<div class="const-item">
-					<span class="const-key">{$t('flowers_per_pack')}</span>
-					<span class="const-val badge blue">{$flowerConstants.flowers_per_pack}</span>
-				</div>
-				<div class="const-item">
-					<span class="const-key">{$t('flowers_price_per_pack')}</span>
-					<span class="const-val badge green">{fmtMoney($flowerConstants.price_per_pack)}</span>
-				</div>
-				<div class="const-item">
-					<span class="const-key">{$t('flowers_price_per_flower')}</span>
-					<span class="const-val badge amber">{fmtMoney($flowerConstants.price_per_flower)}</span>
-				</div>
-			</div>
-		{/if}
-	</div>
-
-	<!-- ═══════════════════════════════════════════════════════ -->
 	<!-- HEADER + AGGREGATE STATS                                -->
 	<!-- ═══════════════════════════════════════════════════════ -->
 	<div class="page-header">
-		<h1 class="page-title">{$t('page_flowers_title')}</h1>
+		<div class="page-title-row">
+			<h1 class="page-title">{$t('page_flowers_title')}</h1>
+			<a href="/settings#flowers-constants" class="glass-btn constants-link">
+				⚙ Настроить константы →
+			</a>
+		</div>
 		<p class="page-sub">{$t('page_flowers_subtitle')}</p>
 	</div>
 
@@ -378,8 +315,19 @@
 	}
 
 	/* ── Page header ─────────────────────────── */
-	.page-header {
-		margin-bottom: 20px;
+	.page-header { margin-bottom: 20px; }
+
+	.page-title-row {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
+
+	.constants-link {
+		font-size: 0.78rem;
+		padding: 6px 14px;
+		text-decoration: none;
 	}
 
 	.page-title {
@@ -432,115 +380,6 @@
 	.kpi-icon { font-size: 1.3rem; }
 	.kpi-val  { font-size: 1.4rem; font-weight: 700; color: var(--color-on-surface); }
 	.kpi-label { font-size: 0.72rem; color: var(--color-outline); }
-
-	/* ── Constants island ────────────────────── */
-	.constants-island {
-		position: fixed;
-		bottom: 90px;
-		right: 20px;
-		width: 240px;
-		z-index: 800;
-		padding: 14px;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.island-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-
-	.island-title {
-		font-size: 0.72rem;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: var(--color-outline);
-	}
-
-	.island-edit-btn {
-		background: none;
-		border: none;
-		cursor: pointer;
-		color: var(--color-outline);
-		font-size: 0.9rem;
-		padding: 2px 6px;
-		border-radius: 6px;
-		transition: color 0.15s;
-	}
-
-	.island-edit-btn:hover { color: var(--color-primary); }
-
-	.constants-grid {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 6px;
-	}
-
-	.constants-grid.editing {
-		grid-template-columns: 1fr;
-	}
-
-	.const-item {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-
-	.const-key {
-		font-size: 0.65rem;
-		color: var(--color-outline);
-		white-space: nowrap;
-	}
-
-	.const-val {
-		font-size: 0.82rem;
-		font-weight: 600;
-	}
-
-	.const-label {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		font-size: 0.72rem;
-		color: var(--color-outline);
-	}
-
-	.island-actions {
-		display: flex;
-		gap: 6px;
-	}
-
-	/* ── Badges ──────────────────────────────── */
-	.badge {
-		display: inline-block;
-		padding: 2px 8px;
-		border-radius: 6px;
-		font-size: 0.78rem;
-		font-weight: 600;
-	}
-
-	.badge.green {
-		background: rgba(52, 211, 153, 0.12);
-		color: #34d399;
-	}
-
-	.badge.blue {
-		background: rgba(96, 165, 250, 0.12);
-		color: #60a5fa;
-	}
-
-	.badge.purple {
-		background: rgba(167, 139, 250, 0.12);
-		color: #a78bfa;
-	}
-
-	.badge.amber {
-		background: rgba(251, 191, 36, 0.12);
-		color: #fbbf24;
-	}
 
 	/* ── View controls ───────────────────────── */
 	.view-controls {

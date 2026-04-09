@@ -12,12 +12,15 @@ import type {
 	CreateFlowerSortPayload,
 	CreateItemPayload,
 	CreateOrderPayload,
+	CreatePackAssignmentPayload,
 	EventRecord,
 	FlowerConstants,
 	FlowerSort,
 	Item,
 	Order,
+	PackAssignment,
 	PackageResult,
+	PackStatus,
 	PriceRecord,
 	RecordSalePayload,
 	SyncPeer,
@@ -252,6 +255,7 @@ export const commands = {
 	// Backup
 	exportBackup: () => safeInvoke<string>('export_backup'),
 	importBackup: (path: string) => safeInvoke<void>('import_backup', { path }),
+	importBackupData: (data: number[]) => safeInvoke<void>('import_backup_data', { data }),
 
 	// Categories
 	createCategory: (payload: CreateCategoryPayload) =>
@@ -311,4 +315,20 @@ export const commands = {
 	startWsServer: () => safeInvoke<void>('start_ws_server'),
 	wsConnectPeer: (targetIp: string) => safeInvoke<number>('ws_connect_peer', { targetIp }),
 	getWsStatus: () => safeInvoke<WsServerStatus>('get_ws_status'),
+
+	// App Version
+	getAppVersion: () => safeInvoke<string>('get_app_version'),
+
+	// Inventory — delete & duplicate
+	deleteItem: (itemId: string) => safeInvoke<void>('delete_item', { itemId }),
+	duplicateItem: (itemId: string) => safeInvoke<string>('duplicate_item', { itemId }),
+	deleteAllItems: () => safeInvoke<number>('delete_all_items'),
+
+	// Pack Assignments
+	createPackAssignment: (payload: CreatePackAssignmentPayload) =>
+		safeInvoke<string>('create_pack_assignment', { payload }),
+	getPackAssignments: (orderId?: string) =>
+		safeInvoke<PackAssignment[]>('get_pack_assignments', { orderId }),
+	updatePackStatus: (id: string, status: PackStatus) =>
+		safeInvoke<void>('update_pack_status', { id, status }),
 } as const;

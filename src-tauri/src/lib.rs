@@ -51,6 +51,9 @@ pub fn run() {
             commands::inventory::adjust_stock,
             commands::inventory::change_price,
             commands::inventory::save_item_image,
+            commands::inventory::delete_item,
+            commands::inventory::duplicate_item,
+            commands::inventory::delete_all_items,
             // ── Events / Audit ──
             commands::events::get_events,
             commands::events::get_price_history,
@@ -62,6 +65,7 @@ pub fn run() {
             // ── Backup ──
             commands::backup::export_backup,
             commands::backup::import_backup,
+            commands::backup::import_backup_data,
             // ── Categories ──
             commands::categories::create_category,
             commands::categories::get_categories,
@@ -88,10 +92,15 @@ pub fn run() {
             commands::flowers::get_flower_constants,
             commands::flowers::set_flower_constants,
             commands::flowers::package_flowers,
+            commands::flowers::create_pack_assignment,
+            commands::flowers::get_pack_assignments,
+            commands::flowers::update_pack_status,
             // ── WebSocket P2P ──
             commands::ws::start_ws_server,
             commands::ws::ws_connect_peer,
             commands::ws::get_ws_status,
+            // ── App Version ──
+            commands::version::get_app_version,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

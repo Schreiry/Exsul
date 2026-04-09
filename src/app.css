@@ -79,6 +79,13 @@ html {
 	font-size: calc(var(--base-font-size) * var(--ui-scale));
 }
 
+@media (max-width: 900px) {
+	:root {
+		--dock-bottom-clearance: 72px;
+		--base-font-size: clamp(12px, 1.2vw, 15px);
+	}
+}
+
 html,
 body {
 	height: 100%;

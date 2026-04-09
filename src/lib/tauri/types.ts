@@ -16,6 +16,7 @@ export interface Item {
 	updated_at: string;
 	category_id?: string;
 	image_path?: string;
+	card_color?: string;
 }
 
 export interface EventRecord {
@@ -65,6 +66,7 @@ export interface UpdateItemPayload {
 	category?: string;
 	category_id?: string;
 	production_cost?: number;
+	card_color?: string;
 }
 
 export interface RecordSalePayload {
@@ -249,11 +251,14 @@ export interface PackageResult {
 // Flower Constants
 // ============================================================
 
+export type PricingMode = 'pack' | 'stem' | 'mixed';
+
 export interface FlowerConstants {
 	weight_per_flower: number;
 	flowers_per_pack: number;
 	price_per_pack: number;
 	price_per_flower: number;
+	pricing_mode: PricingMode;
 }
 
 // ============================================================
@@ -269,10 +274,36 @@ export interface WsPeerStatus {
 	state: WsPeerState;
 	last_sync?: string;
 	events_merged: number;
+	app_version?: string;
 }
 
 export interface WsServerStatus {
 	running: boolean;
 	port: number;
 	peers: WsPeerStatus[];
+}
+
+// ============================================================
+// Pack Assignments
+// ============================================================
+
+export type PackStatus = 'prepared' | 'loaded' | 'delivered';
+
+export interface PackAssignment {
+	id: string;
+	sort_id: string;
+	order_id?: string;
+	pack_count: number;
+	stems_per_pack: number;
+	status: PackStatus;
+	note?: string;
+	created_at: string;
+}
+
+export interface CreatePackAssignmentPayload {
+	sort_id: string;
+	order_id?: string;
+	pack_count: number;
+	stems_per_pack: number;
+	note?: string;
 }
