@@ -10,8 +10,10 @@
 	} from '$lib/stores/flowers';
 	import { t } from '$lib/stores/i18n';
 	import type { FlowerSort, FlowerConstants, UpdateFlowerSortPayload } from '$lib/tauri/types';
+	import PackagingModal from '$lib/components/flowers/PackagingModal.svelte';
 
 	// ── Local state ───────────────────────────────────────────
+	let packingSort = $state<FlowerSort | null>(null);
 	let editingSort = $state<FlowerSort | null>(null);
 	let showAddForm = $state(false);
 	let newName = $state('');
@@ -237,6 +239,11 @@
 									<button class="adj-btn pos" onclick={() => handleAdjust(sort, 1, 0)}>+</button>
 								</div>
 							</div>
+							<button
+								class="pack-btn"
+								title={$t('flowers_pack_action')}
+								onclick={() => (packingSort = sort)}
+							>📦</button>
 						</div>
 					{:else}
 						<div class="empty-panel">Нет сырых стеблей</div>
@@ -297,6 +304,9 @@
 						<div class="sort-info">
 							<span class="sort-name">{sort.name}</span>
 							{#if sort.variety}<span class="sort-variety">{sort.variety}</span>{/if}
+							{#if sort.purchase_price > 0}
+								<span class="sort-price">закупка: {fmtMoney(sort.purchase_price)}/шт</span>
+							{/if}
 						</div>
 						<div class="sort-meta">
 							<span class="stock-badge raw" title="Сырьё">{sort.raw_stock} ст.</span>
@@ -308,6 +318,11 @@
 								<button class="adj-btn pos" title="Упак. +1" onclick={() => handleAdjust(sort, 0, 1)}>+P</button>
 							</div>
 						</div>
+						<button
+							class="pack-btn"
+							title={$t('flowers_pack_action')}
+							onclick={() => (packingSort = sort)}
+						>📦</button>
 						<div class="sort-actions">
 							<button class="action-btn" onclick={() => (editingSort = { ...sort })}>✎</button>
 							<button class="action-btn del" onclick={() => handleDeleteSort(sort.id)}>✕</button>
@@ -348,6 +363,11 @@
 		</div>
 	{/if}
 </div>
+
+<!-- ── Packaging Modal ───────────────────────────────────── -->
+{#if packingSort}
+	<PackagingModal sort={packingSort} onclose={() => (packingSort = null)} />
+{/if}
 
 <style>
 	.page {
@@ -731,6 +751,33 @@
 	}
 
 	.adj-btn.pos:hover { background: rgba(52, 211, 153, 0.16); }
+
+	/* ── Pack button ─────────────────────────── */
+	.pack-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 36px;
+		height: 36px;
+		border-radius: 10px;
+		background: rgba(52, 211, 153, 0.07);
+		border: 1px solid rgba(52, 211, 153, 0.18);
+		cursor: pointer;
+		font-size: 1rem;
+		transition: background 0.15s, transform 0.15s var(--ease-spring);
+		flex-shrink: 0;
+	}
+
+	.pack-btn:hover {
+		background: rgba(52, 211, 153, 0.16);
+		transform: scale(1.08);
+	}
+
+	.sort-price {
+		font-size: 0.68rem;
+		color: var(--color-outline);
+		margin-top: 1px;
+	}
 
 	/* ── Sort actions ────────────────────────── */
 	.sort-actions {

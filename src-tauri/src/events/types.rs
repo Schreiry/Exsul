@@ -258,6 +258,9 @@ pub struct FlowerSort {
     pub color_hex: Option<String>,
     pub raw_stock: i32,
     pub pkg_stock: i32,
+    pub purchase_price: f64,
+    pub sell_price_stem: f64,
+    pub flowers_per_pack_override: Option<i32>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -267,6 +270,9 @@ pub struct CreateFlowerSortPayload {
     pub name: String,
     pub variety: Option<String>,
     pub color_hex: Option<String>,
+    pub purchase_price: Option<f64>,
+    pub sell_price_stem: Option<f64>,
+    pub flowers_per_pack_override: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -277,6 +283,22 @@ pub struct UpdateFlowerSortPayload {
     pub color_hex: Option<String>,
     pub raw_stock: Option<i32>,
     pub pkg_stock: Option<i32>,
+    pub purchase_price: Option<f64>,
+    pub sell_price_stem: Option<f64>,
+    pub flowers_per_pack_override: Option<i32>,
+}
+
+// ============================================================
+// Flower ERP — Packaging
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageResult {
+    pub sort_id: String,
+    pub new_raw_stock: i32,
+    pub new_pkg_stock: i32,
+    pub stems_used: i32,
+    pub packs_created: i32,
 }
 
 // ============================================================

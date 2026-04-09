@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::events::types::{
-    FlowerConstants, FlowerSort, CreateFlowerSortPayload, UpdateFlowerSortPayload,
+    FlowerConstants, FlowerSort, CreateFlowerSortPayload, PackageResult, UpdateFlowerSortPayload,
 };
 use tauri::State;
 use uuid::Uuid;
@@ -69,4 +69,51 @@ pub fn set_flower_constants(
     }
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     crate::db::queries::set_flower_constants(&conn, &constants)
+}
+
+// ── ERP: Packaging ───────────────────────────────────────────
+
+/// Consume raw stems from a flower sort and produce packs.
+/// Returns the updated stock values so the frontend can optimistically update.
+#[tauri::command]
+pub fn package_flowers(
+    db: State<'_, Database>,
+    sort_id: String,
+    pack_count: i32,
+) -> Result<PackageResult, String> {
+    if pack_count <= 0 {
+        return Err("pack_count must be > 0".to_string());
+    }
+
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    // Determine effective flowers_per_pack: use per-sort override or global constant
+    let override_fpp: Option<i32> = conn
+        .query_row(
+            "SELECT flowers_per_pack_override FROM flower_sorts WHERE id = ?1",
+            [&sort_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let flowers_per_pack: i32 = match override_fpp {
+        Some(v) if v > 0 => v,
+        _ => {
+            let global: f64 = conn
+                .query_row(
+                    "SELECT value FROM flower_constants WHERE key = 'flowers_per_pack'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(10.0);
+            global.round() as i32
+        }
+    };
+
+    if flowers_per_pack <= 0 {
+        return Err("flowers_per_pack must be > 0".to_string());
+    }
+
+    let log_id = Uuid::new_v4().to_string();
+    crate::db::queries::package_flowers(&conn, &log_id, &sort_id, pack_count, flowers_per_pack)
 }

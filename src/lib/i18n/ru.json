@@ -1,5 +1,5 @@
 {
-  "nav_dashboard": "Главная",
+  "nav_dashboard": "Контрольный центр",
   "nav_inventory": "Склад",
   "nav_analytics": "Аналитика",
   "nav_orders": "Заказы",
@@ -8,6 +8,7 @@
 
   "page_dashboard_title": "Exsul",
   "page_dashboard_subtitle": "Склад и аналитика",
+  "page_control_center_title": "Контрольный центр",
   "page_inventory_title": "Склад",
   "page_analytics_title": "Аналитика",
   "page_orders_title": "Заказы",
@@ -140,7 +141,7 @@
   "label_dark_mode": "Тёмная",
   "label_light_mode": "Светлая",
 
-  "action_manage_categories": "Категории",
+  "action_manage_categories": "Изменение категории",
   "action_new_category": "Новая категория",
   "label_category_color": "Цвет",
   "label_edit_item": "Редактировать",
@@ -171,5 +172,41 @@
   "label_total_packs_value": "Стоимость упаковок",
   "label_potential_packs": "Потенциальных упаковок",
   "label_packaged": "Упаковано",
-  "label_unpackaged": "Неупаковано"
+  "label_unpackaged": "Неупаковано",
+
+  "label_ui_scale": "Масштаб интерфейса",
+
+  "bento_sync_title": "Синхронизация",
+  "bento_orders_title": "Заказы",
+  "bento_inventory_title": "Склад",
+  "bento_flowers_title": "Цветы",
+  "bento_chart_title": "Аналитика",
+  "bento_activity_title": "Последние действия",
+  "bento_view_all": "Смотреть все →",
+  "bento_no_activity": "Нет недавних действий",
+  "bento_no_orders": "Нет активных заказов",
+  "bento_node_online": "В сети",
+  "bento_node_offline": "Не подключено",
+  "bento_peers_connected": "{n} устройств",
+  "bento_total_purchase_value": "Стоимость закупки",
+
+  "flowers_purchase_price": "Цена закупки (₽)",
+  "flowers_sell_price_stem": "Цена продажи/стебель (₽)",
+  "flowers_per_pack_override": "Стеблей/упак. (перекрытие)",
+  "flowers_pack_action": "Упаковать",
+  "flowers_pack_modal_title": "Упаковка",
+  "flowers_pack_count": "Количество упаковок",
+  "flowers_pack_math": "{packs} упак. × {fpp} стеблей = {stems} стеблей",
+  "flowers_pack_insufficient": "Недостаточно стеблей (нужно {needed}, есть {has})",
+  "flowers_pack_confirm": "Подтвердить упаковку",
+  "flowers_total_purchase_value": "Стоимость закупки",
+  "flowers_manage_sorts": "Сорта цветков",
+  "flowers_add_sort_label": "Добавить сорт",
+
+  "action_manage_sorts": "Сорта цветков",
+  "label_flower_sort": "Сорт цветка",
+  "label_variety": "Разновидность",
+  "label_purchase_price": "Цена закупки",
+  "label_sell_price": "Цена продажи/стебель",
+  "label_pack_override": "Стеблей в упаковке (для этого сорта)"
 }

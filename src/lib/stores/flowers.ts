@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { commands } from '$lib/tauri/commands';
-import type { FlowerSort, FlowerConstants, UpdateFlowerSortPayload } from '$lib/tauri/types';
+import type { FlowerSort, FlowerConstants, PackageResult, UpdateFlowerSortPayload } from '$lib/tauri/types';
 
 // ── Flower sorts ──────────────────────────────────────────────
 
@@ -46,6 +46,18 @@ function createFlowerSortsStore() {
 		async adjustStock(id: string, rawDelta: number, pkgDelta: number) {
 			await commands.adjustFlowerStock(id, rawDelta, pkgDelta);
 			await this.load();
+		},
+		async packageFlowers(sortId: string, packCount: number): Promise<PackageResult> {
+			const result = await commands.packageFlowers(sortId, packCount);
+			// Optimistically update the store with new stock values
+			update((sorts) =>
+				sorts.map((s) =>
+					s.id === sortId
+						? { ...s, raw_stock: result.new_raw_stock, pkg_stock: result.new_pkg_stock }
+						: s
+				)
+			);
+			return result;
 		},
 	};
 }
@@ -117,6 +129,11 @@ export const flowerFinancials = derived(
 		const potentialPacks = $c.flowers_per_pack > 0
 			? Math.floor(totalRaw / $c.flowers_per_pack)
 			: 0;
+		// ERP: total purchase cost (sum of raw_stock * purchase_price per sort)
+		const totalPurchaseValue = $sorts.reduce(
+			(sum, s) => sum + s.raw_stock * (s.purchase_price ?? 0),
+			0
+		);
 
 		return {
 			totalRaw,
@@ -126,6 +143,7 @@ export const flowerFinancials = derived(
 			totalValue: packValue + rawValue,
 			totalWeight,
 			potentialPacks,
+			totalPurchaseValue,
 		};
 	}
 );

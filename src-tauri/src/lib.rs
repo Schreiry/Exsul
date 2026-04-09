@@ -87,6 +87,7 @@ pub fn run() {
             commands::flowers::adjust_flower_stock,
             commands::flowers::get_flower_constants,
             commands::flowers::set_flower_constants,
+            commands::flowers::package_flowers,
             // ── WebSocket P2P ──
             commands::ws::start_ws_server,
             commands::ws::ws_connect_peer,

@@ -17,6 +17,7 @@ import type {
 	FlowerSort,
 	Item,
 	Order,
+	PackageResult,
 	PriceRecord,
 	RecordSalePayload,
 	SyncPeer,
@@ -301,6 +302,10 @@ export const commands = {
 	getFlowerConstants: () => safeInvoke<FlowerConstants>('get_flower_constants'),
 	setFlowerConstants: (constants: FlowerConstants) =>
 		safeInvoke<void>('set_flower_constants', { constants }),
+
+	// Flower ERP — Packaging
+	packageFlowers: (sortId: string, packCount: number) =>
+		safeInvoke<PackageResult>('package_flowers', { sortId, packCount }),
 
 	// WebSocket P2P
 	startWsServer: () => safeInvoke<void>('start_ws_server'),

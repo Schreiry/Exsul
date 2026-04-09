@@ -1,5 +1,5 @@
 {
-  "nav_dashboard": "Dashboard",
+  "nav_dashboard": "Control Center",
   "nav_inventory": "Inventory",
   "nav_analytics": "Analytics",
   "nav_orders": "Orders",
@@ -8,6 +8,7 @@
 
   "page_dashboard_title": "Exsul",
   "page_dashboard_subtitle": "Inventory & Analytics",
+  "page_control_center_title": "Control Center",
   "page_inventory_title": "Inventory",
   "page_analytics_title": "Analytics",
   "page_orders_title": "Orders",
@@ -140,7 +141,7 @@
   "label_dark_mode": "Dark",
   "label_light_mode": "Light",
 
-  "action_manage_categories": "Categories",
+  "action_manage_categories": "Manage Categories",
   "action_new_category": "New Category",
   "label_category_color": "Color",
   "label_edit_item": "Edit",
@@ -171,5 +172,41 @@
   "label_total_packs_value": "Pack Value",
   "label_potential_packs": "Potential Packs",
   "label_packaged": "Packaged",
-  "label_unpackaged": "Unpackaged"
+  "label_unpackaged": "Unpackaged",
+
+  "label_ui_scale": "UI Scale",
+
+  "bento_sync_title": "Sync",
+  "bento_orders_title": "Orders",
+  "bento_inventory_title": "Inventory",
+  "bento_flowers_title": "Flowers",
+  "bento_chart_title": "Analytics",
+  "bento_activity_title": "Recent Activity",
+  "bento_view_all": "View all →",
+  "bento_no_activity": "No recent activity",
+  "bento_no_orders": "No active orders",
+  "bento_node_online": "Online",
+  "bento_node_offline": "Offline",
+  "bento_peers_connected": "{n} devices",
+  "bento_total_purchase_value": "Purchase Value",
+
+  "flowers_purchase_price": "Purchase Price",
+  "flowers_sell_price_stem": "Sell Price / Stem",
+  "flowers_per_pack_override": "Stems/Pack (override)",
+  "flowers_pack_action": "Package",
+  "flowers_pack_modal_title": "Packaging",
+  "flowers_pack_count": "Number of Packs",
+  "flowers_pack_math": "{packs} packs × {fpp} stems = {stems} stems",
+  "flowers_pack_insufficient": "Not enough stems (need {needed}, have {has})",
+  "flowers_pack_confirm": "Confirm Packaging",
+  "flowers_total_purchase_value": "Purchase Value",
+  "flowers_manage_sorts": "Flower Sorts",
+  "flowers_add_sort_label": "Add Sort",
+
+  "action_manage_sorts": "Flower Sorts",
+  "label_flower_sort": "Flower Sort",
+  "label_variety": "Variety",
+  "label_purchase_price": "Purchase Price",
+  "label_sell_price": "Sell Price / Stem",
+  "label_pack_override": "Stems per Pack (for this sort)"
 }

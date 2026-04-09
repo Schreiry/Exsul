@@ -91,7 +91,10 @@
 	.app-main {
 		min-height: 100vh;
 		padding: 24px;
-		padding-bottom: 96px;
+		padding-bottom: var(--dock-bottom-clearance, 96px);
+		padding-left: max(24px, var(--dock-side-clearance, 0px));
+		padding-right: max(24px, var(--dock-side-clearance, 0px));
+		transition: padding 0.3s var(--ease-spring);
 	}
 
 	.logo-watermark {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { seedColor, colorMode } from '$lib/stores/theme';
+	import { seedColor, colorMode, uiScale } from '$lib/stores/theme';
 	import { nodeId, syncPeers, loadSyncState } from '$lib/stores/sync';
 	import { locale, t } from '$lib/stores/i18n';
 	import { preset } from '$lib/stores/preset';
@@ -92,6 +92,24 @@
 	<!-- ── Appearance ─────────────────────────────────────────── -->
 	<section class="section">
 		<h2>{$t('label_appearance')}</h2>
+
+		<!-- UI Scale slider -->
+		<div class="scale-row">
+			<label class="scale-label" for="ui-scale-input">{$t('label_ui_scale')} — {$uiScale.toFixed(1)}×</label>
+			<input
+				id="ui-scale-input"
+				type="range"
+				min="0.8"
+				max="1.4"
+				step="0.05"
+				value={$uiScale}
+				oninput={(e) => uiScale.set(parseFloat((e.target as HTMLInputElement).value))}
+				class="scale-slider"
+			/>
+			<div class="scale-markers">
+				<span>0.8×</span><span>1.0×</span><span>1.2×</span><span>1.4×</span>
+			</div>
+		</div>
 
 		<!-- Dark / Light toggle -->
 		<div class="mode-toggle-row">
@@ -287,6 +305,35 @@
 		display: flex;
 		gap: 8px;
 		flex-shrink: 0;
+	}
+
+	/* ── UI Scale slider ─────────── */
+	.scale-row {
+		margin-bottom: 20px;
+	}
+
+	.scale-label {
+		display: block;
+		font-size: 0.85rem;
+		color: var(--color-on-surface);
+		margin-bottom: 10px;
+		font-weight: 500;
+	}
+
+	.scale-slider {
+		width: 100%;
+		accent-color: var(--color-primary);
+		cursor: pointer;
+		height: 4px;
+		border-radius: 2px;
+	}
+
+	.scale-markers {
+		display: flex;
+		justify-content: space-between;
+		margin-top: 6px;
+		font-size: 0.7rem;
+		color: var(--color-outline);
 	}
 
 	/* ── Appearance / mode toggle ── */

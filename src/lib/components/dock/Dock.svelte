@@ -46,6 +46,21 @@
 		}
 	}
 
+	// Communicate dock dimensions to root so app-main can compensate
+	$effect(() => {
+		const root = document.documentElement;
+		if (device === 'tablet-landscape') {
+			root.style.setProperty('--dock-bottom-clearance', '0px');
+			root.style.setProperty('--dock-side-clearance', '76px');
+		} else if (device === 'mobile-portrait') {
+			root.style.setProperty('--dock-bottom-clearance', '72px');
+			root.style.setProperty('--dock-side-clearance', '0px');
+		} else {
+			root.style.setProperty('--dock-bottom-clearance', '96px');
+			root.style.setProperty('--dock-side-clearance', '0px');
+		}
+	});
+
 	// Drag-reorder is only enabled on non-split layouts (two separate rails
 	// can't share a drag context, so reordering is disabled there)
 	let canDrag = $derived(device !== 'tablet-landscape');

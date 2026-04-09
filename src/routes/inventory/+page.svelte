@@ -1,15 +1,70 @@
 <script lang="ts">
 	import { inventory, categories as categoryStrings } from '$lib/stores/inventory';
 	import { categories } from '$lib/stores/categories';
+	import { flowerSorts } from '$lib/stores/flowers';
+	import { preset } from '$lib/stores/preset';
 	import { t } from '$lib/stores/i18n';
 	import { commands } from '$lib/tauri/commands';
 	import LiquidGlassCard from '$lib/components/LiquidGlassCard.svelte';
 	import ItemDetailModal from '$lib/components/inventory/ItemDetailModal.svelte';
-	import type { CreateItemPayload, Item, Category } from '$lib/tauri/types';
+	import type { CreateItemPayload, Item, Category, FlowerSort } from '$lib/tauri/types';
 
 	let showForm = $state(false);
 	let showCategoryManager = $state(false);
+	let showSortManager = $state(false);
 	let selectedItem = $state<Item | null>(null);
+
+	// Load flower sorts when in flowers preset
+	$effect(() => {
+		if ($preset === 'flowers') flowerSorts.load();
+	});
+
+	// ── Sort manager state ─────────────────────────────────────
+	let newSortName = $state('');
+	let newSortVariety = $state('');
+	let newSortColor = $state('#f472b6');
+	let newSortPurchasePrice = $state(0);
+	let newSortSellPrice = $state(0);
+	let editingSortId = $state<string | null>(null);
+	let editingSort = $state<FlowerSort | null>(null);
+
+	async function handleCreateSort() {
+		if (!newSortName.trim()) return;
+		await flowerSorts.create(
+			newSortName.trim(),
+			newSortVariety.trim() || undefined,
+			newSortColor,
+		);
+		newSortName = '';
+		newSortVariety = '';
+		newSortColor = '#f472b6';
+		newSortPurchasePrice = 0;
+		newSortSellPrice = 0;
+	}
+
+	function startEditSort(sort: FlowerSort) {
+		editingSortId = sort.id;
+		editingSort = { ...sort };
+	}
+
+	async function handleSaveSort() {
+		if (!editingSort) return;
+		await flowerSorts.updateSort({
+			id: editingSort.id,
+			name: editingSort.name,
+			variety: editingSort.variety,
+			color_hex: editingSort.color_hex,
+			purchase_price: editingSort.purchase_price,
+			sell_price_stem: editingSort.sell_price_stem,
+			flowers_per_pack_override: editingSort.flowers_per_pack_override ?? undefined,
+		});
+		editingSortId = null;
+		editingSort = null;
+	}
+
+	async function handleDeleteSort(id: string) {
+		await flowerSorts.remove(id);
+	}
 
 	let formData = $state<CreateItemPayload>({
 		name: '',
@@ -147,13 +202,21 @@
 	<div class="header">
 		<h1>{$t('page_inventory_title')}</h1>
 		<div class="header-actions">
+			{#if $preset === 'flowers'}
+				<button
+					class="btn-secondary"
+					onclick={() => { showSortManager = !showSortManager; showCategoryManager = false; showForm = false; }}
+				>
+					🌸 {$t('action_manage_sorts')}
+				</button>
+			{/if}
 			<button
 				class="btn-secondary"
-				onclick={() => { showCategoryManager = !showCategoryManager; showForm = false; }}
+				onclick={() => { showCategoryManager = !showCategoryManager; showSortManager = false; showForm = false; }}
 			>
 				{$t('action_manage_categories')}
 			</button>
-			<button class="btn-primary" onclick={() => { showForm = !showForm; showCategoryManager = false; }}>
+			<button class="btn-primary" onclick={() => { showForm = !showForm; showCategoryManager = false; showSortManager = false; }}>
 				{showForm ? $t('action_cancel') : $t('action_add_item')}
 			</button>
 		</div>
@@ -206,6 +269,49 @@
 		</div>
 	{/if}
 
+	<!-- ── Sort Manager (flowers preset) ────────────────────────── -->
+	{#if showSortManager && $preset === 'flowers'}
+		<div class="cat-panel">
+			<div class="cat-panel-title">{$t('flowers_manage_sorts')}</div>
+			{#if $flowerSorts.length === 0}
+				<p class="empty-hint">{$t('empty_no_items')}</p>
+			{:else}
+				<div class="cat-list">
+					{#each $flowerSorts as sort (sort.id)}
+						{#if editingSortId === sort.id && editingSort}
+							<div class="cat-row editing">
+								<input type="color" class="cat-color-swatch" bind:value={editingSort.color_hex} />
+								<input class="cat-name-input" type="text" bind:value={editingSort.name} placeholder="Вид" />
+								<input class="cat-name-input sm" type="text" bind:value={editingSort.variety} placeholder="Сорт" />
+								<button class="cat-action-btn save" onclick={handleSaveSort}>✓</button>
+								<button class="cat-action-btn" onclick={() => { editingSortId = null; editingSort = null; }}>✕</button>
+							</div>
+						{:else}
+							<div class="cat-row">
+								<span class="cat-color-dot" style:background={sort.color_hex ?? '#888'}></span>
+								<span class="cat-name">{sort.name}{sort.variety ? ` — ${sort.variety}` : ''}</span>
+								<span class="sort-stock-badge">{sort.raw_stock} ст.</span>
+								{#if sort.purchase_price > 0}
+									<span class="sort-price-badge">{sort.purchase_price} ₽/шт</span>
+								{/if}
+								<button class="cat-action-btn" onclick={() => startEditSort(sort)}>✎</button>
+								<button class="cat-action-btn danger" onclick={() => handleDeleteSort(sort.id)}>✕</button>
+							</div>
+						{/if}
+					{/each}
+				</div>
+			{/if}
+			<div class="cat-add-form">
+				<input type="color" class="cat-color-swatch" bind:value={newSortColor} />
+				<input class="cat-name-input" type="text" placeholder="Вид (Тюльпан)" bind:value={newSortName} />
+				<input class="cat-name-input sm" type="text" placeholder="Сорт" bind:value={newSortVariety} />
+				<button class="btn-secondary" onclick={handleCreateSort} disabled={!newSortName.trim()}>
+					+ {$t('flowers_add_sort_label')}
+				</button>
+			</div>
+		</div>
+	{/if}
+
 	<!-- ── Item creation form ──────────────────────────────────── -->
 	{#if showForm}
 		<form class="item-form" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
@@ -239,6 +345,24 @@
 					<label for="stock">{$t('label_stock')}</label>
 					<input id="stock" type="number" min="0" bind:value={formData.initial_stock} />
 				</div>
+				{#if $preset === 'flowers' && $flowerSorts.length > 0}
+					<div class="form-field">
+						<label for="flower-sort">{$t('label_flower_sort')}</label>
+						<select id="flower-sort" onchange={(e) => {
+							const id = (e.currentTarget as HTMLSelectElement).value;
+							const sort = $flowerSorts.find((s) => s.id === id);
+							if (sort) {
+								formData.category = sort.name;
+								if (sort.sell_price_stem > 0 && !formData.price) formData.price = sort.sell_price_stem;
+							}
+						}}>
+							<option value="">— {$t('label_flower_sort')} —</option>
+							{#each $flowerSorts as sort}
+								<option value={sort.id}>{sort.name}{sort.variety ? ` — ${sort.variety}` : ''}</option>
+							{/each}
+						</select>
+					</div>
+				{/if}
 			</div>
 
 			<div class="form-field">
@@ -443,6 +567,28 @@
 	}
 
 	.empty-hint { font-size: 0.82rem; color: var(--color-outline); font-style: italic; }
+
+	.cat-name-input.sm { max-width: 120px; }
+
+	.sort-stock-badge {
+		font-size: 0.72rem;
+		padding: 2px 8px;
+		border-radius: 10px;
+		background: rgba(96, 165, 250, 0.12);
+		color: #60a5fa;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.sort-price-badge {
+		font-size: 0.72rem;
+		padding: 2px 8px;
+		border-radius: 10px;
+		background: rgba(52, 211, 153, 0.10);
+		color: var(--color-primary);
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
 
 	/* ── Item form ── */
 	.item-form {

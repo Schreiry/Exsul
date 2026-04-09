@@ -209,6 +209,9 @@ export interface FlowerSort {
 	color_hex?: string;
 	raw_stock: number;
 	pkg_stock: number;
+	purchase_price: number;
+	sell_price_stem: number;
+	flowers_per_pack_override?: number;
 	created_at: string;
 	updated_at: string;
 }
@@ -217,6 +220,9 @@ export interface CreateFlowerSortPayload {
 	name: string;
 	variety?: string;
 	color_hex?: string;
+	purchase_price?: number;
+	sell_price_stem?: number;
+	flowers_per_pack_override?: number;
 }
 
 export interface UpdateFlowerSortPayload {
@@ -226,6 +232,17 @@ export interface UpdateFlowerSortPayload {
 	color_hex?: string;
 	raw_stock?: number;
 	pkg_stock?: number;
+	purchase_price?: number;
+	sell_price_stem?: number;
+	flowers_per_pack_override?: number;
+}
+
+export interface PackageResult {
+	sort_id: string;
+	new_raw_stock: number;
+	new_pkg_stock: number;
+	stems_used: number;
+	packs_created: number;
 }
 
 // ============================================================

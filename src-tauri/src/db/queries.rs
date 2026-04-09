@@ -1,8 +1,8 @@
 use crate::events::types::{
     AddOrderItemPayload, AddTrustedNodePayload, AuditLog, AuditLogFilter, Category,
     CreateCategoryPayload, CreateFlowerSortPayload, EventRecord, FlowerConstants, FlowerSort,
-    Item, Order, OrderItem, PriceRecord, SyncPeer, TrustedNode, UpdateCategoryPayload,
-    UpdateFlowerSortPayload, CreateOrderPayload,
+    Item, Order, OrderItem, PackageResult, PriceRecord, SyncPeer, TrustedNode,
+    UpdateCategoryPayload, UpdateFlowerSortPayload, CreateOrderPayload,
 };
 use rusqlite::{params, Connection};
 
@@ -676,7 +676,9 @@ pub fn get_peer_last_hlc(
 pub fn get_flower_sorts(conn: &Connection) -> Result<Vec<FlowerSort>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, variety, color_hex, raw_stock, pkg_stock, created_at, updated_at
+            "SELECT id, name, variety, color_hex, raw_stock, pkg_stock,
+                    purchase_price, sell_price_stem, flowers_per_pack_override,
+                    created_at, updated_at
              FROM flower_sorts ORDER BY name ASC, variety ASC",
         )
         .map_err(|e| e.to_string())?;
@@ -690,8 +692,11 @@ pub fn get_flower_sorts(conn: &Connection) -> Result<Vec<FlowerSort>, String> {
                 color_hex: row.get(3)?,
                 raw_stock: row.get(4)?,
                 pkg_stock: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                purchase_price: row.get(6)?,
+                sell_price_stem: row.get(7)?,
+                flowers_per_pack_override: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -707,8 +712,17 @@ pub fn insert_flower_sort(
     payload: &CreateFlowerSortPayload,
 ) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO flower_sorts (id, name, variety, color_hex) VALUES (?1, ?2, ?3, ?4)",
-        params![id, payload.name, payload.variety, payload.color_hex],
+        "INSERT INTO flower_sorts (id, name, variety, color_hex, purchase_price, sell_price_stem, flowers_per_pack_override)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            id,
+            payload.name,
+            payload.variety,
+            payload.color_hex,
+            payload.purchase_price.unwrap_or(0.0),
+            payload.sell_price_stem.unwrap_or(0.0),
+            payload.flowers_per_pack_override,
+        ],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -720,11 +734,14 @@ pub fn update_flower_sort(
 ) -> Result<(), String> {
     conn.execute(
         "UPDATE flower_sorts SET
-            name      = COALESCE(?2, name),
-            variety   = COALESCE(?3, variety),
-            color_hex = COALESCE(?4, color_hex),
-            raw_stock = COALESCE(?5, raw_stock),
-            pkg_stock = COALESCE(?6, pkg_stock),
+            name                     = COALESCE(?2, name),
+            variety                  = COALESCE(?3, variety),
+            color_hex                = COALESCE(?4, color_hex),
+            raw_stock                = COALESCE(?5, raw_stock),
+            pkg_stock                = COALESCE(?6, pkg_stock),
+            purchase_price           = COALESCE(?7, purchase_price),
+            sell_price_stem          = COALESCE(?8, sell_price_stem),
+            flowers_per_pack_override = COALESCE(?9, flowers_per_pack_override),
             updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
          WHERE id = ?1",
         params![
@@ -733,11 +750,75 @@ pub fn update_flower_sort(
             payload.variety,
             payload.color_hex,
             payload.raw_stock,
-            payload.pkg_stock
+            payload.pkg_stock,
+            payload.purchase_price,
+            payload.sell_price_stem,
+            payload.flowers_per_pack_override,
         ],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+pub fn package_flowers(
+    conn: &Connection,
+    log_id: &str,
+    sort_id: &str,
+    pack_count: i32,
+    flowers_per_pack: i32,
+) -> Result<PackageResult, String> {
+    // Read current stock
+    let (raw_stock, _pkg_stock): (i32, i32) = conn
+        .query_row(
+            "SELECT raw_stock, pkg_stock FROM flower_sorts WHERE id = ?1",
+            [sort_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let stems_needed = pack_count * flowers_per_pack;
+
+    if raw_stock < stems_needed {
+        return Err(format!(
+            "Недостаточно стеблей: нужно {}, есть {}",
+            stems_needed, raw_stock
+        ));
+    }
+
+    // Deduct raw, add packed
+    conn.execute(
+        "UPDATE flower_sorts SET
+            raw_stock  = raw_stock - ?2,
+            pkg_stock  = pkg_stock + ?3,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+         WHERE id = ?1",
+        params![sort_id, stems_needed, pack_count],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Log the transaction
+    conn.execute(
+        "INSERT INTO packaging_log (id, sort_id, pack_count, stems_used) VALUES (?1, ?2, ?3, ?4)",
+        params![log_id, sort_id, pack_count, stems_needed],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Read back new values
+    let (new_raw, new_pkg): (i32, i32) = conn
+        .query_row(
+            "SELECT raw_stock, pkg_stock FROM flower_sorts WHERE id = ?1",
+            [sort_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(PackageResult {
+        sort_id: sort_id.to_string(),
+        new_raw_stock: new_raw,
+        new_pkg_stock: new_pkg,
+        stems_used: stems_needed,
+        packs_created: pack_count,
+    })
 }
 
 pub fn delete_flower_sort(conn: &Connection, id: &str) -> Result<(), String> {
