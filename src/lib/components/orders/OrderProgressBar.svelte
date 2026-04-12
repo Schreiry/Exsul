@@ -16,12 +16,12 @@
 		{ key: 'delivered',   label: 'Доставлено' },
 	];
 
-	// Map status to stage index (0-based)
+	// completed fills all 4 stages (including "delivered" as visual endpoint)
 	const stageIndex = $derived(() => {
 		switch (status) {
 			case 'pending':     return 0;
 			case 'in_progress': return 1;
-			case 'completed':   return 2;
+			case 'completed':   return 3;
 			default:            return -1; // cancelled
 		}
 	});
@@ -41,7 +41,10 @@
 
 	function handleStageClick(idx: number) {
 		if (readonly || isCancelled) return;
-		onchange?.(stageToStatus(idx));
+		const newStatus = stageToStatus(idx);
+		if (newStatus !== status) {
+			onchange?.(newStatus);
+		}
 	}
 </script>
 
@@ -101,21 +104,25 @@
 	/* The horizontal connector line */
 	.connector {
 		position: absolute;
-		top: 10px;
+		top: 11px;
 		right: 50%;
 		width: 100%;
-		height: 2px;
+		height: 3px;
 		background: var(--color-outline, rgba(255,255,255,0.15));
+		border-radius: 1.5px;
 		transform: translateX(-50%);
 		z-index: 0;
-		transition: background 0.25s;
+		transition: background 0.5s ease-out, box-shadow 0.5s ease-out;
 	}
-	.connector.filled { background: var(--color-primary); }
+	.connector.filled {
+		background: var(--color-primary);
+		box-shadow: 0 0 8px color-mix(in srgb, var(--color-primary) 35%, transparent);
+	}
 
 	/* Stage circle */
 	.stage-node {
-		width: 20px;
-		height: 20px;
+		width: 24px;
+		height: 24px;
 		border-radius: 50%;
 		border: 2px solid var(--color-outline, rgba(255,255,255,0.2));
 		background: var(--color-surface);
@@ -124,7 +131,7 @@
 		justify-content: center;
 		position: relative;
 		z-index: 1;
-		transition: border-color 0.2s, background 0.2s, transform 0.15s;
+		transition: border-color 0.3s, background 0.3s, transform 0.2s ease-out, box-shadow 0.3s;
 		cursor: default;
 		padding: 0;
 	}
@@ -133,27 +140,38 @@
 		border-color: var(--color-primary);
 		background: var(--color-primary);
 		color: var(--color-on-primary, #fff);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--color-primary) 25%, transparent);
 	}
 
 	.stage-node.current {
-		transform: scale(1.2);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 25%, transparent);
+		transform: scale(1.25);
+		box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 20%, transparent),
+		            0 0 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
+		animation: pulse-glow 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-glow {
+		0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 20%, transparent), 0 0 12px color-mix(in srgb, var(--color-primary) 30%, transparent); }
+		50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-primary) 15%, transparent), 0 0 18px color-mix(in srgb, var(--color-primary) 20%, transparent); }
 	}
 
 	.stage-node.clickable { cursor: pointer; }
-	.stage-node.clickable:hover { transform: scale(1.15); opacity: 0.85; }
-	.stage-node.clickable.current:hover { transform: scale(1.25); }
+	.stage-node.clickable:hover {
+		transform: scale(1.15);
+		box-shadow: 0 0 10px color-mix(in srgb, var(--color-primary) 20%, transparent);
+	}
+	.stage-node.clickable.current:hover { transform: scale(1.3); }
 	.stage-node:disabled { cursor: default; }
 
 	.stage-label {
 		font-size: 0.65rem;
-		margin-top: 5px;
+		margin-top: 6px;
 		color: var(--color-outline);
 		white-space: nowrap;
-		transition: color 0.2s;
+		transition: color 0.3s;
 		text-align: center;
 	}
-	.stage-label.active { color: var(--color-primary); }
+	.stage-label.active { color: var(--color-primary); font-weight: 500; }
 
 	/* Cancelled */
 	.cancelled-bar {

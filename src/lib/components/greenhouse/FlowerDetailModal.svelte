@@ -31,9 +31,25 @@
 	let harvestSaving = $state(false);
 	let harvestSuccess = $state(false);
 
-	const photoSrc = $derived(
-		sort.photo_path ? convertFileSrc(sort.photo_path) : null
-	);
+	let appDataDir = $state('');
+
+	function resolvePhotoSrc(photoPath: string | null | undefined, baseDir: string): string | null {
+		if (!photoPath) return null;
+		if (photoPath.includes(':') || photoPath.startsWith('/')) {
+			return convertFileSrc(photoPath);
+		}
+		if (!baseDir) return null;
+		const base = baseDir.endsWith('\\') || baseDir.endsWith('/') ? baseDir : baseDir + '/';
+		return convertFileSrc(base + photoPath.replace(/\\/g, '/'));
+	}
+
+	const photoSrc = $derived(resolvePhotoSrc(sort.photo_path, appDataDir));
+
+	$effect(() => {
+		import('@tauri-apps/api/path').then(({ appDataDir: getDir }) =>
+			getDir().then((dir) => { appDataDir = dir; })
+		).catch(() => {});
+	});
 
 	$effect(() => {
 		flowerSorts.getHarvestLog(sort.id, 90).then((log) => {
@@ -109,7 +125,7 @@
 		return Array.from(days.values());
 	});
 
-	const chartMax = $derived(Math.max(1, ...chartData()));
+	const chartMax = $derived(() => Math.max(1, ...chartData()));
 
 	function handleBackdropClick(e: MouseEvent) {
 		if (e.target === e.currentTarget) onclose();

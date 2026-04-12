@@ -5,9 +5,10 @@
 	import { preset } from '$lib/stores/preset';
 	import { t } from '$lib/stores/i18n';
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
-	import GlassDropdown from '$lib/components/common/GlassDropdown.svelte';
+	import { commands } from '$lib/tauri/commands';
 	import OrderProgressBar from '$lib/components/orders/OrderProgressBar.svelte';
 	import OrderDetailModal from '$lib/components/orders/OrderDetailModal.svelte';
+	import AddItemModal from '$lib/components/orders/AddItemModal.svelte';
 	import { formatCountdown } from '$lib/utils/countdown';
 	import type { CreateOrderPayload, AddOrderItemPayload, OrderStatus, OrderItem, Order } from '$lib/tauri/types';
 
@@ -21,6 +22,7 @@
 	type FilterTab = 'all' | OrderStatus;
 	let activeTab = $state<FilterTab>('all');
 	let showForm = $state(false);
+	let showAddItem = $state(false);
 	let detailOrder = $state<Order | null>(null);
 
 	// Live countdown — one shared timer updates all cards each minute
@@ -45,15 +47,14 @@
 		deadline: '',
 		notes: '',
 	});
+	let deliveryAddress = $state('');
 
 	// Inline order items being added while creating order
 	let pendingItems = $state<Omit<AddOrderItemPayload, 'order_id'>[]>([]);
-	let newItemRow = $state({ item_id: '', quantity: 1, unit_price: 0 });
 
 	let filteredOrders = $derived(
 		activeTab === 'all' ? $orders : $orders.filter((o) => o.status === activeTab)
 	);
-
 
 	const statusColors: Record<string, string> = {
 		pending: '#f59e0b',
@@ -76,10 +77,9 @@
 		return map;
 	});
 
-	function addPendingItem() {
-		if (!newItemRow.item_id) return;
-		pendingItems = [...pendingItems, { ...newItemRow }];
-		newItemRow = { item_id: '', quantity: 1, unit_price: 0 };
+	function handleAddItem(item: { item_id: string; quantity: number; unit_price: number }) {
+		pendingItems = [...pendingItems, item];
+		showAddItem = false;
 	}
 
 	function removePendingItem(index: number) {
@@ -95,10 +95,18 @@
 			deadline: formData.deadline || undefined,
 			notes: formData.notes || undefined,
 		});
+
+		// Set delivery address if provided
+		if (deliveryAddress.trim()) {
+			await commands.updateOrderExtended(orderId, undefined, deliveryAddress.trim(), undefined, undefined);
+		}
+
 		for (const item of pendingItems) {
 			await orders.addItem({ ...item, order_id: orderId });
 		}
+
 		formData = { customer_name: '', customer_email: '', customer_phone: '', deadline: '', notes: '' };
+		deliveryAddress = '';
 		pendingItems = [];
 		showForm = false;
 	}
@@ -121,6 +129,7 @@
 			<p><strong>${$t('label_customer_name')}:</strong> ${order.customer_name}</p>
 			${order.customer_phone ? `<p><strong>${$t('label_customer_phone')}:</strong> ${order.customer_phone}</p>` : ''}
 			${order.customer_email ? `<p><strong>${$t('label_customer_email')}:</strong> ${order.customer_email}</p>` : ''}
+			${order.delivery_address ? `<p><strong>Адрес:</strong> ${order.delivery_address}</p>` : ''}
 			${order.deadline ? `<p><strong>${$t('label_deadline')}:</strong> ${new Date(order.deadline).toLocaleString()}</p>` : ''}
 			<table>
 				<thead><tr><th>${$t('label_name')}</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
@@ -172,6 +181,15 @@
 					<span>{$t('label_deadline')}</span>
 					<input type="datetime-local" bind:value={formData.deadline} />
 				</label>
+				<label class="field">
+					<span>Адрес доставки</span>
+					<div class="location-input-wrap">
+						<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" class="location-icon">
+							<path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+						</svg>
+						<input type="text" bind:value={deliveryAddress} placeholder="Город, улица, дом..." />
+					</div>
+				</label>
 			</div>
 			<label class="field full-width">
 				<span>{$t('label_notes')}</span>
@@ -179,38 +197,35 @@
 			</label>
 
 			<div class="order-items-section">
-				<h3>{$t('action_add_order_item')}</h3>
-				{#each pendingItems as item, i}
-					<div class="item-row" class:item-shortage={shortages.has(i)}>
-						<span>{isFlowers
-							? ($flowerSorts.find(s => s.id === item.item_id)?.name ?? item.item_id)
-							: ($inventory.find(it => it.id === item.item_id)?.name ?? item.item_id)
-						}</span>
-						<span>x{item.quantity}</span>
-						<span>{item.unit_price.toFixed(2)}</span>
-						<button class="btn-ghost" onclick={() => removePendingItem(i)}>×</button>
-					</div>
-					{#if shortages.has(i)}
-						<div class="shortage-alert">
-							<span class="shortage-icon">⚠</span>
-							<span>{$t('shortage_alert')} — {$t('shortage_deficit', { n: shortages.get(i)! })}</span>
-						</div>
-					{/if}
-				{/each}
-				<div class="add-item-row">
-					<div class="add-item-dropdown">
-						<GlassDropdown
-							items={isFlowers
-								? $flowerSorts.map(s => ({ value: s.id, label: s.name + (s.variety ? ` — ${s.variety}` : '') }))
-								: $inventory.map(it => ({ value: it.id, label: it.name }))}
-							bind:value={newItemRow.item_id}
-							placeholder="— {$t('label_name')} —"
-						/>
-					</div>
-					<input type="number" min="1" bind:value={newItemRow.quantity} placeholder="Qty" />
-					<input type="number" min="0" step="0.01" bind:value={newItemRow.unit_price} placeholder="Price" />
-					<button class="btn-secondary" onclick={addPendingItem}>+</button>
+				<div class="items-header">
+					<h3>{$t('action_add_order_item')}</h3>
+					<button class="btn-add-item" type="button" onclick={() => (showAddItem = true)}>
+						<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+						Добавить товар
+					</button>
 				</div>
+
+				{#if pendingItems.length === 0}
+					<p class="items-empty">Товары ещё не добавлены</p>
+				{:else}
+					{#each pendingItems as item, i}
+						<div class="item-row" class:item-shortage={shortages.has(i)}>
+							<span class="item-name">{isFlowers
+								? ($flowerSorts.find(s => s.id === item.item_id)?.name ?? item.item_id)
+								: ($inventory.find(it => it.id === item.item_id)?.name ?? item.item_id)
+							}</span>
+							<span class="item-qty">x{item.quantity}</span>
+							<span class="item-price">{formatAmount(item.unit_price * item.quantity, $globalCurrency)}</span>
+							<button class="btn-ghost btn-remove" onclick={() => removePendingItem(i)} aria-label="Удалить">&#10005;</button>
+						</div>
+						{#if shortages.has(i)}
+							<div class="shortage-alert">
+								<span class="shortage-icon">&#9888;</span>
+								<span>{$t('shortage_alert')} — {$t('shortage_deficit', { n: shortages.get(i)! })}</span>
+							</div>
+						{/if}
+					{/each}
+				{/if}
 			</div>
 
 			<div class="form-actions">
@@ -248,7 +263,7 @@
 							<span class="customer-name">{order.customer_name}</span>
 							{#if order.delivery_address}
 								<span class="order-location">
-									<svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+									<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
 									{order.delivery_address}
 								</span>
 							{/if}
@@ -266,14 +281,14 @@
 							<svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
 							<span class="deadline-date">{new Date(order.deadline).toLocaleString('ru', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
 							{#if countdowns[order.id]}
-								<span class="countdown" class:overdue={countdowns[order.id] === 'просрочен'}>
+								<span class="countdown" class:overdue={countdowns[order.id] === 'проср��чен'}>
 									{countdowns[order.id]}
 								</span>
 							{/if}
 						</div>
 					{/if}
 
-					<!-- Progress bar (replaces slider) -->
+					<!-- Progress bar -->
 					<div class="progress-row" role="presentation" onclick={(e) => e.stopPropagation()}>
 						<OrderProgressBar
 							status={order.status}
@@ -286,7 +301,7 @@
 							<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
 							{$t('action_print_preorder')}
 						</button>
-						<span class="detail-hint">Нажмите для деталей →</span>
+						<span class="detail-hint">{$t('hint_click_details') ?? 'Нажмите для деталей'} &#8594;</span>
 					</div>
 
 					{#if order.notes}
@@ -302,6 +317,14 @@
 	<OrderDetailModal
 		bind:order={detailOrder}
 		onclose={() => (detailOrder = null)}
+	/>
+{/if}
+
+{#if showAddItem}
+	<AddItemModal
+		flowerSorts={$flowerSorts}
+		onconfirm={handleAddItem}
+		onclose={() => (showAddItem = false)}
 	/>
 {/if}
 
@@ -380,48 +403,108 @@
 	.field textarea { resize: vertical; }
 	.full-width { margin-bottom: 16px; }
 
+	/* Location input with icon */
+	.location-input-wrap {
+		position: relative;
+		display: flex;
+		align-items: center;
+	}
+	.location-input-wrap .location-icon {
+		position: absolute;
+		left: 10px;
+		color: var(--color-primary);
+		pointer-events: none;
+		flex-shrink: 0;
+	}
+	.location-input-wrap input {
+		padding-left: 32px;
+		width: 100%;
+		background: var(--color-surface-container-high);
+		border: 1px solid var(--color-outline-variant);
+		border-radius: 8px;
+		padding-top: 10px;
+		padding-bottom: 10px;
+		padding-right: 12px;
+		color: var(--color-on-surface);
+		font-size: 0.875rem;
+		font-family: inherit;
+		outline: none;
+		transition: border-color 0.15s;
+	}
+	.location-input-wrap input:focus {
+		border-color: var(--color-primary);
+	}
+
+	/* Order items */
 	.order-items-section {
 		margin-bottom: 16px;
 	}
 
-	.order-items-section h3 {
+	.items-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 10px;
+	}
+
+	.items-header h3 {
 		font-size: 0.875rem;
 		font-weight: 600;
 		color: var(--color-on-surface);
-		margin: 0 0 10px;
+		margin: 0;
+	}
+
+	.btn-add-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		background: var(--color-surface-container-high);
+		border: 1px dashed var(--color-outline-variant);
+		border-radius: 8px;
+		padding: 7px 14px;
+		font-size: 0.8rem;
+		font-weight: 500;
+		color: var(--color-primary);
+		cursor: pointer;
+		transition: background 0.15s, border-color 0.15s;
+	}
+	.btn-add-item:hover {
+		background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+		border-color: var(--color-primary);
+	}
+
+	.items-empty {
+		font-size: 0.8rem;
+		color: var(--color-outline);
+		opacity: 0.6;
+		text-align: center;
+		padding: 12px 0;
+		margin: 0;
 	}
 
 	.item-row {
 		display: flex;
 		gap: 12px;
 		align-items: center;
-		padding: 6px 0;
+		padding: 8px 10px;
 		border-bottom: 1px solid var(--color-outline-variant);
 		font-size: 0.875rem;
 		color: var(--color-on-surface);
+		border-radius: 6px;
+		transition: background 0.1s;
 	}
+	.item-row:hover { background: rgba(255,255,255,0.02); }
 
-	.item-row span:first-child { flex: 1; }
+	.item-name { flex: 1; font-weight: 500; }
+	.item-qty { color: var(--color-outline); font-size: 0.8rem; }
+	.item-price { font-weight: 600; color: var(--color-primary); font-size: 0.85rem; }
 
-	.add-item-row {
-		display: flex;
-		gap: 8px;
-		align-items: center;
-		margin-top: 10px;
+	.btn-remove {
+		font-size: 0.75rem;
+		opacity: 0.4;
+		padding: 2px 6px;
 	}
-
-	.add-item-dropdown { flex: 2; }
-	.add-item-row input { flex: 1; }
-
-	.add-item-row input {
-		background: var(--color-surface-container-high);
-		border: 1px solid var(--color-outline-variant);
-		border-radius: 8px;
-		padding: 8px 10px;
-		color: var(--color-on-surface);
-		font-size: 0.875rem;
-		font-family: inherit;
-	}
+	.btn-remove:hover { opacity: 1; color: var(--color-alert-red, #ef4444); }
 
 	.form-actions {
 		display: flex;
@@ -505,13 +588,23 @@
 	.countdown { color: var(--color-primary); font-weight: 500; }
 	.countdown.overdue { color: var(--color-alert-red, #ef4444); }
 
-	/* Location chip */
+	/* Location chip — improved */
 	.order-location {
-		display: flex; align-items: center; gap: 3px;
-		font-size: 0.72rem; color: var(--color-outline);
-		margin-top: 2px;
-		white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		font-size: 0.78rem;
+		color: var(--color-on-surface);
+		margin-top: 3px;
+		padding: 3px 10px 3px 6px;
+		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+		border-radius: 20px;
+		max-width: 280px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
+	.order-location svg { flex-shrink: 0; color: var(--color-primary); }
 
 	/* Detail hint */
 	.detail-hint {
@@ -581,16 +674,6 @@
 	.btn-primary:hover { opacity: 0.85; }
 	.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
-	.btn-secondary {
-		background: var(--color-surface-container-high);
-		color: var(--color-on-surface);
-		border: 1px solid var(--color-outline-variant);
-		border-radius: 8px;
-		padding: 8px 14px;
-		font-size: 0.875rem;
-		cursor: pointer;
-	}
-
 	.btn-ghost {
 		background: none;
 		border: none;
@@ -607,6 +690,7 @@
 	/* Shortage alerts */
 	.item-shortage {
 		border-color: var(--color-alert-red) !important;
+		background: rgba(239, 68, 68, 0.04) !important;
 	}
 
 	.shortage-alert {

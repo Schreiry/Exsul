@@ -188,6 +188,9 @@ function getMock<T>(cmd: string, args?: Record<string, unknown>): T {
 				status: 'pending',
 				total_amount: 0,
 				notes: p?.notes,
+				pack_count_ordered: 0,
+				pack_count_ready: 0,
+				deadline_confirmed: false,
 				created_at: nowIso(),
 				updated_at: nowIso(),
 			});

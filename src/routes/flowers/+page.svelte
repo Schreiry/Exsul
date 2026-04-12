@@ -44,7 +44,7 @@
 	<!-- ── Header ───────────────────────────────────────────── -->
 	<div class="page-header">
 		<div class="header-left">
-			<h1 class="page-title">Оранжерея</h1>
+			<h1 class="page-title">Теплица</h1>
 			<p class="page-sub">Управление сырьём и урожаем</p>
 		</div>
 		<div class="header-actions">

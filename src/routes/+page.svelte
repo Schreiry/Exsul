@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { inventory, totalStock, totalRevenue, totalItems } from '$lib/stores/inventory';
 	import { preset } from '$lib/stores/preset';
-	import { flowerSorts } from '$lib/stores/flowers';
+	import { flowerSorts, totalRawStems, totalPacks, flowerFinancials, flowerConstants } from '$lib/stores/flowers';
 	import { orders } from '$lib/stores/orders';
 	import { auditLog } from '$lib/stores/audit';
 	import { nodeId, wsServerRunning, wsPeers, loadWsStatus } from '$lib/stores/sync';
@@ -63,13 +63,16 @@
 		canvas.height = h * dpr;
 		ctx.scale(dpr, dpr);
 
-		const items = $inventory.slice(0, 8);
-		if (items.length === 0) {
+		const isFlowers = $preset === 'flowers' && $flowerSorts.length > 0;
+		const chartItems = isFlowers
+			? $flowerSorts.slice(0, 8).map(s => ({ label: s.name, value: s.pkg_stock * $flowerConstants.price_per_pack }))
+			: $inventory.slice(0, 8).map(i => ({ label: i.name, value: i.revenue }));
+		if (chartItems.length === 0) {
 			ctx.clearRect(0, 0, w, h);
 			return;
 		}
 
-		const maxRev = Math.max(...items.map((i) => i.revenue), 1);
+		const maxRev = Math.max(...chartItems.map((i) => i.value), 1);
 		const style = getComputedStyle(canvas);
 		const primary = style.getPropertyValue('--color-primary').trim() || '#34d399';
 		const secondary = style.getPropertyValue('--color-secondary').trim() || '#5bb8d0';
@@ -77,11 +80,11 @@
 
 		ctx.clearRect(0, 0, w, h);
 
-		const barW = (w - 24) / items.length;
+		const barW = (w - 24) / chartItems.length;
 		const padH = 8;
 
-		items.forEach((item, i) => {
-			const barH = Math.max(3, ((item.revenue / maxRev) * (h - padH * 2)));
+		chartItems.forEach((item, i) => {
+			const barH = Math.max(3, ((item.value / maxRev) * (h - padH * 2)));
 			const x = 12 + i * barW + barW * 0.15;
 			const bw = barW * 0.7;
 			const y = h - padH - barH;
@@ -260,42 +263,70 @@
 				<a href="/inventory" class="bento-view-all">{$t('bento_view_all')}</a>
 			</div>
 			<div class="bento-card-body">
-				<div class="inv-kpi-grid">
-					<div class="inv-kpi">
-						<span class="inv-kpi-val">{$totalItems}</span>
-						<span class="inv-kpi-lbl">{$t('stat_total_items')}</span>
-					</div>
-					<div class="inv-kpi">
-						<span class="inv-kpi-val">{$totalStock}</span>
-						<span class="inv-kpi-lbl">{$t('stat_total_stock')}</span>
-					</div>
-					<div class="inv-kpi">
-						<span class="inv-kpi-val color-revenue">{fmt($totalRevenue)}</span>
-						<span class="inv-kpi-lbl">{$t('stat_total_revenue')}</span>
-					</div>
-				</div>
 				{#if $preset === 'flowers' && $flowerSorts.length > 0}
-					<div class="inv-flowers-row">
-						<span class="inv-flowers-item">
-							🌸 {$flowerSorts.reduce((s, f) => s + f.raw_stock, 0)} стеблей
-						</span>
-						<span class="inv-flowers-item">
-							📦 {$flowerSorts.reduce((s, f) => s + f.pkg_stock, 0)} упаковок
-						</span>
+					<div class="inv-kpi-grid">
+						<div class="inv-kpi">
+							<span class="inv-kpi-val">{$flowerSorts.length}</span>
+							<span class="inv-kpi-lbl">сортов</span>
+						</div>
+						<div class="inv-kpi">
+							<span class="inv-kpi-val">{$totalRawStems}</span>
+							<span class="inv-kpi-lbl">стеблей</span>
+						</div>
+						<div class="inv-kpi">
+							<span class="inv-kpi-val">{$totalPacks}</span>
+							<span class="inv-kpi-lbl">упаковок</span>
+						</div>
 					</div>
-				{/if}
-				{#if $inventory.length > 0}
+					<div class="inv-kpi-grid" style="margin-top:6px">
+						<div class="inv-kpi" style="grid-column: span 2">
+							<span class="inv-kpi-val color-revenue">{fmt($flowerFinancials.totalValue)}</span>
+							<span class="inv-kpi-lbl">стоимость склада</span>
+						</div>
+						<div class="inv-kpi">
+							<span class="inv-kpi-val">{fmt($flowerFinancials.totalPurchaseValue)}</span>
+							<span class="inv-kpi-lbl">себестоимость</span>
+						</div>
+					</div>
 					<div class="inv-recent-list">
-						{#each $inventory.slice(0, 3) as item}
+						{#each $flowerSorts.slice(0, 3) as sort}
 							<div class="inv-recent-row">
 								<div class="inv-recent-info">
-									<span class="inv-recent-name">{item.name}</span>
-									<span class="inv-recent-cat">{item.category}</span>
+									<span class="inv-recent-name">{sort.name}</span>
+									<span class="inv-recent-cat">{sort.variety ?? ''}</span>
 								</div>
-								<span class="inv-recent-stock">{item.current_stock} шт.</span>
+								<span class="inv-recent-stock">📦 {sort.pkg_stock} · 🌸 {sort.raw_stock}</span>
 							</div>
 						{/each}
 					</div>
+				{:else}
+					<div class="inv-kpi-grid">
+						<div class="inv-kpi">
+							<span class="inv-kpi-val">{$totalItems}</span>
+							<span class="inv-kpi-lbl">{$t('stat_total_items')}</span>
+						</div>
+						<div class="inv-kpi">
+							<span class="inv-kpi-val">{$totalStock}</span>
+							<span class="inv-kpi-lbl">{$t('stat_total_stock')}</span>
+						</div>
+						<div class="inv-kpi">
+							<span class="inv-kpi-val color-revenue">{fmt($totalRevenue)}</span>
+							<span class="inv-kpi-lbl">{$t('stat_total_revenue')}</span>
+						</div>
+					</div>
+					{#if $inventory.length > 0}
+						<div class="inv-recent-list">
+							{#each $inventory.slice(0, 3) as item}
+								<div class="inv-recent-row">
+									<div class="inv-recent-info">
+										<span class="inv-recent-name">{item.name}</span>
+										<span class="inv-recent-cat">{item.category}</span>
+									</div>
+									<span class="inv-recent-stock">{item.current_stock} шт.</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				{/if}
 			</div>
 		</div>
@@ -727,22 +758,6 @@
 		font-size: 0.78rem;
 		color: var(--color-secondary);
 		font-weight: 500;
-	}
-
-	/* Flowers mini-row inside inventory tile */
-	.inv-flowers-row {
-		display: flex;
-		gap: 10px;
-		flex-wrap: wrap;
-	}
-
-	.inv-flowers-item {
-		font-size: 0.78rem;
-		color: var(--color-on-surface);
-		opacity: 0.75;
-		background: var(--color-surface-container);
-		padding: 4px 10px;
-		border-radius: 8px;
 	}
 
 	/* ── Chart block ── */

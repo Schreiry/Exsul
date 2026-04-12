@@ -32,3 +32,4 @@ base64 = "0.22"
 tokio-tungstenite = { version = "0.24", features = [] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { inventory, totalRevenue, totalStock, totalItems } from '$lib/stores/inventory';
 	import { orders } from '$lib/stores/orders';
-	import { flowerSorts } from '$lib/stores/flowers';
+	import { flowerSorts, totalRawStems, totalPacks, flowerFinancials, flowerConstants } from '$lib/stores/flowers';
 	import { preset } from '$lib/stores/preset';
 	import { commands } from '$lib/tauri/commands';
 	import { t } from '$lib/stores/i18n';
@@ -76,42 +76,66 @@
 			.reduce((s, o) => s + o.total_amount, 0),
 	});
 
-	// ── Inventory analytics ───────────────────────────────────
-	const warehouseStats = $derived({
-		totalCost: $inventory.reduce((s, i) => s + i.production_cost * i.current_stock, 0),
-		totalValue: $inventory.reduce((s, i) => s + i.current_price * i.current_stock, 0),
-		avgMargin: (() => {
-			const totalStock = $inventory.reduce((s, i) => s + i.current_stock, 0);
-			if (totalStock === 0) return 0;
-			const weighted = $inventory.reduce((s, i) => {
-				const m = i.current_price > 0
-					? (i.current_price - i.production_cost) / i.current_price
-					: 0;
-				return s + m * i.current_stock;
-			}, 0);
-			return Math.round((weighted / totalStock) * 100);
-		})(),
-		totalSold: $inventory.reduce((s, i) => s + i.sold_count, 0),
+	// ── Inventory / Warehouse analytics ───────────────────────
+	const warehouseStats = $derived.by(() => {
+		if ($preset === 'flowers' && $flowerSorts.length > 0) {
+			const fin = $flowerFinancials;
+			const margin = fin.totalValue > 0
+				? Math.round(((fin.totalValue - fin.totalPurchaseValue) / fin.totalValue) * 100)
+				: 0;
+			return {
+				totalCost: fin.totalPurchaseValue,
+				totalValue: fin.totalValue,
+				avgMargin: margin,
+				totalSold: packagingLog.reduce((s, e) => s + e.pack_count, 0),
+			};
+		}
+		const stock = $inventory.reduce((s, i) => s + i.current_stock, 0);
+		const weighted = stock === 0 ? 0 : $inventory.reduce((s, i) => {
+			const m = i.current_price > 0
+				? (i.current_price - i.production_cost) / i.current_price : 0;
+			return s + m * i.current_stock;
+		}, 0);
+		return {
+			totalCost: $inventory.reduce((s, i) => s + i.production_cost * i.current_stock, 0),
+			totalValue: $inventory.reduce((s, i) => s + i.current_price * i.current_stock, 0),
+			avgMargin: stock === 0 ? 0 : Math.round((weighted / stock) * 100),
+			totalSold: $inventory.reduce((s, i) => s + i.sold_count, 0),
+		};
 	});
 
 	const sq = $derived(searchQuery.toLowerCase().trim());
 
 	let categoryStats = $derived.by(() => {
-		const entries = Object.entries(
-			$inventory.reduce(
-				(acc, item) => {
-					if (!acc[item.category]) {
-						acc[item.category] = { count: 0, stock: 0, revenue: 0, sold: 0 };
-					}
-					acc[item.category].count++;
-					acc[item.category].stock += item.current_stock;
-					acc[item.category].revenue += item.revenue;
-					acc[item.category].sold += item.sold_count;
-					return acc;
-				},
-				{} as Record<string, { count: number; stock: number; revenue: number; sold: number }>
-			)
-		);
+		let entries: [string, { count: number; stock: number; revenue: number; sold: number }][];
+
+		if ($preset === 'flowers' && $flowerSorts.length > 0) {
+			const c = $flowerConstants;
+			const map: Record<string, { count: number; stock: number; revenue: number; sold: number }> = {};
+			for (const s of $flowerSorts) {
+				if (!map[s.name]) map[s.name] = { count: 0, stock: 0, revenue: 0, sold: 0 };
+				map[s.name].count++;
+				map[s.name].stock += s.raw_stock + s.pkg_stock;
+				map[s.name].revenue += s.pkg_stock * c.price_per_pack + s.raw_stock * s.sell_price_stem;
+				map[s.name].sold += s.pkg_stock;
+			}
+			entries = Object.entries(map);
+		} else {
+			entries = Object.entries(
+				$inventory.reduce(
+					(acc, item) => {
+						if (!acc[item.category]) acc[item.category] = { count: 0, stock: 0, revenue: 0, sold: 0 };
+						acc[item.category].count++;
+						acc[item.category].stock += item.current_stock;
+						acc[item.category].revenue += item.revenue;
+						acc[item.category].sold += item.sold_count;
+						return acc;
+					},
+					{} as Record<string, { count: number; stock: number; revenue: number; sold: number }>
+				)
+			);
+		}
+
 		const filtered = sq ? entries.filter(([cat]) => cat.toLowerCase().includes(sq)) : entries;
 		return filtered.sort((a, b) => {
 			const va = catSortKey === 'category' ? a[0] : a[1][catSortKey];
@@ -122,6 +146,25 @@
 	});
 
 	let topSellers = $derived.by(() => {
+		if ($preset === 'flowers' && $flowerSorts.length > 0) {
+			const c = $flowerConstants;
+			let items = [...$flowerSorts]
+				.map(s => ({
+					name: `${s.name}${s.variety ? ' — ' + s.variety : ''}`,
+					category: s.name,
+					sold_count: s.pkg_stock,
+					revenue: s.pkg_stock * c.price_per_pack,
+				}))
+				.sort((a, b) => b.sold_count - a.sold_count)
+				.slice(0, 20);
+			if (sq) items = items.filter(i => i.name.toLowerCase().includes(sq) || i.category.toLowerCase().includes(sq));
+			return items.sort((a, b) => {
+				const va = a[topSortKey as keyof typeof a];
+				const vb = b[topSortKey as keyof typeof b];
+				const cmp = typeof va === 'string' ? va.localeCompare(vb as string) : (va as number) - (vb as number);
+				return topSortDir === 'asc' ? cmp : -cmp;
+			});
+		}
 		let items = [...$inventory].sort((a, b) => b.sold_count - a.sold_count).slice(0, 20);
 		if (sq) items = items.filter(i => i.name.toLowerCase().includes(sq) || i.category.toLowerCase().includes(sq));
 		return items.sort((a, b) => {
@@ -504,255 +547,275 @@
 		</div>
 	{/if}
 
-	<!-- ── Date range filter ─────────────────────────────────── -->
-	<div class="date-filter">
-		<span class="date-filter-label">Период:</span>
-		<input class="date-input" type="date" bind:value={dateFrom} title="С даты" />
-		<span style="color:var(--color-outline)">—</span>
-		<input class="date-input" type="date" bind:value={dateTo} title="По дату" />
-		{#if dateFrom || dateTo}
-			<button class="btn-ghost-sm" onclick={() => { dateFrom = ''; dateTo = ''; }}>✕ Сброс</button>
-		{/if}
-	</div>
+	<!-- ══ ORDERS TAB (or all content for non-flowers) ══════════ -->
+	{#if $preset !== 'flowers' || activeTab === 'orders'}
+		<!-- ── Date range filter ─────────────────────────────────── -->
+		<div class="date-filter">
+			<span class="date-filter-label">Период:</span>
+			<input class="date-input" type="date" bind:value={dateFrom} title="С даты" />
+			<span style="color:var(--color-outline)">—</span>
+			<input class="date-input" type="date" bind:value={dateTo} title="По дату" />
+			{#if dateFrom || dateTo}
+				<button class="btn-ghost-sm" onclick={() => { dateFrom = ''; dateTo = ''; }}>✕ Сброс</button>
+			{/if}
+		</div>
 
-	<!-- ── KPI Overview ─────────────────────────────────────── -->
-	<div class="overview-grid">
-		<div class="metric-card accent">
-			<span class="metric-label">{$t('stat_total_revenue')}</span>
-			<span class="metric-value">{fmt($totalRevenue)}</span>
-		</div>
-		<div class="metric-card">
-			<span class="metric-label">{$t('stat_total_items')}</span>
-			<span class="metric-value">{$totalItems}</span>
-		</div>
-		<div class="metric-card">
-			<span class="metric-label">{$t('stat_total_stock')}</span>
-			<span class="metric-value">{$totalStock}</span>
-		</div>
-		<div class="metric-card">
-			<span class="metric-label">Себест. склада</span>
-			<span class="metric-value">{fmt(warehouseStats.totalCost)}</span>
-		</div>
-		<div class="metric-card">
-			<span class="metric-label">Стоимость склада</span>
-			<span class="metric-value">{fmt(warehouseStats.totalValue)}</span>
-		</div>
-		<div class="metric-card">
-			<span class="metric-label">Ср. маржа</span>
-			<span class="metric-value">{warehouseStats.avgMargin}%</span>
-		</div>
-		<div class="metric-card">
-			<span class="metric-label">Продано всего</span>
-			<span class="metric-value">{warehouseStats.totalSold}</span>
-		</div>
-		<div class="metric-card">
-			<span class="metric-label">Активных заказов</span>
-			<span class="metric-value">{orderStats.pending + orderStats.inProgress}</span>
-		</div>
-		<div class="metric-card">
-			<span class="metric-label">Сумма в работе</span>
-			<span class="metric-value">{fmt(orderStats.pendingAmount)}</span>
-		</div>
-	</div>
-
-	<!-- ── Orders breakdown ──────────────────────────────────── -->
-	{#if orderStats.total > 0}
-	<section class="section">
-		<h2>Заказы</h2>
-		<div class="orders-status-grid">
-			<div class="order-status-card status-pending">
-				<span class="ost-num">{orderStats.pending}</span>
-				<span class="ost-lbl">Ожидают</span>
-			</div>
-			<div class="order-status-card status-inprogress">
-				<span class="ost-num">{orderStats.inProgress}</span>
-				<span class="ost-lbl">В работе</span>
-			</div>
-			<div class="order-status-card status-completed">
-				<span class="ost-num">{orderStats.completed}</span>
-				<span class="ost-lbl">Выполнено</span>
-			</div>
-			<div class="order-status-card status-cancelled">
-				<span class="ost-num">{orderStats.cancelled}</span>
-				<span class="ost-lbl">Отменено</span>
-			</div>
-		</div>
-		<div class="orders-amounts">
-			<div class="amount-row">
-				<span class="amount-lbl">Выручка (выполн.):</span>
-				<span class="amount-val color-primary">{fmt(orderStats.completedAmount)}</span>
-			</div>
-			<div class="amount-row">
-				<span class="amount-lbl">В ожидании:</span>
-				<span class="amount-val">{fmt(orderStats.pendingAmount)}</span>
-			</div>
-			<div class="amount-row">
-				<span class="amount-lbl">Всего по заказам:</span>
-				<span class="amount-val">{fmt(orderStats.totalAmount)}</span>
-			</div>
-		</div>
-	</section>
-	{/if}
-
-	<!-- ── Flowers summary (preset only) ─────────────────────── -->
-	{#if $preset === 'flowers' && $flowerSorts.length > 0}
-	<section class="section">
-		<h2>🌸 Цветочный склад</h2>
+		<!-- ── KPI Overview ─────────────────────────────────────── -->
 		<div class="overview-grid">
-			<div class="metric-card">
-				<span class="metric-label">Сортов</span>
-				<span class="metric-value">{$flowerSorts.length}</span>
+			<div class="metric-card accent">
+				<span class="metric-label">{$t('stat_total_revenue')}</span>
+				<span class="metric-value">{fmt(orderStats.totalAmount)}</span>
 			</div>
 			<div class="metric-card">
-				<span class="metric-label">Стеблей</span>
-				<span class="metric-value">{$flowerSorts.reduce((s, f) => s + f.raw_stock, 0)}</span>
+				<span class="metric-label">Активных заказов</span>
+				<span class="metric-value">{orderStats.pending + orderStats.inProgress}</span>
 			</div>
 			<div class="metric-card">
-				<span class="metric-label">Упаковок</span>
-				<span class="metric-value">{$flowerSorts.reduce((s, f) => s + f.pkg_stock, 0)}</span>
+				<span class="metric-label">Сумма в работе</span>
+				<span class="metric-value">{fmt(orderStats.pendingAmount)}</span>
+			</div>
+			<div class="metric-card">
+				<span class="metric-label">Выполнено</span>
+				<span class="metric-value">{fmt(orderStats.completedAmount)}</span>
 			</div>
 		</div>
-	</section>
-	{/if}
 
-	<!-- Search -->
-	<div class="search-row">
-		<input class="search-input" type="text" bind:value={searchQuery} placeholder={$t('analytics_search_placeholder')} />
-	</div>
+		<!-- ── Orders breakdown ──────────────────────────────────── -->
+		{#if orderStats.total > 0}
+		<section class="section">
+			<h2>Заказы</h2>
+			<div class="orders-status-grid">
+				<div class="order-status-card status-pending">
+					<span class="ost-num">{orderStats.pending}</span>
+					<span class="ost-lbl">Ожидают</span>
+				</div>
+				<div class="order-status-card status-inprogress">
+					<span class="ost-num">{orderStats.inProgress}</span>
+					<span class="ost-lbl">В работе</span>
+				</div>
+				<div class="order-status-card status-completed">
+					<span class="ost-num">{orderStats.completed}</span>
+					<span class="ost-lbl">Выполнено</span>
+				</div>
+				<div class="order-status-card status-cancelled">
+					<span class="ost-num">{orderStats.cancelled}</span>
+					<span class="ost-lbl">Отменено</span>
+				</div>
+			</div>
+			<div class="orders-amounts">
+				<div class="amount-row">
+					<span class="amount-lbl">Выручка (выполн.):</span>
+					<span class="amount-val color-primary">{fmt(orderStats.completedAmount)}</span>
+				</div>
+				<div class="amount-row">
+					<span class="amount-lbl">В ожидании:</span>
+					<span class="amount-val">{fmt(orderStats.pendingAmount)}</span>
+				</div>
+				<div class="amount-row">
+					<span class="amount-lbl">Всего по заказам:</span>
+					<span class="amount-val">{fmt(orderStats.totalAmount)}</span>
+				</div>
+			</div>
+		</section>
+		{/if}
 
-	<!-- Charts row -->
-	<div class="charts-row">
-		<div class="chart-card">
-			<h2>{$t('analytics_sales_velocity')}</h2>
-			<canvas bind:this={salesCanvas} class="chart-canvas" style="width:100%;height:200px;"></canvas>
+		<!-- Charts row -->
+		<div class="charts-row">
+			<div class="chart-card">
+				<h2>{$t('analytics_sales_velocity')}</h2>
+				<canvas bind:this={salesCanvas} class="chart-canvas" style="width:100%;height:200px;"></canvas>
+			</div>
+			<div class="chart-card">
+				<h2>{$t('analytics_revenue_by_category')}</h2>
+				<canvas bind:this={revenueCanvas} class="chart-canvas" style="width:100%;height:200px;"></canvas>
+			</div>
 		</div>
-		<div class="chart-card">
-			<h2>{$t('analytics_revenue_by_category')}</h2>
-			<canvas bind:this={revenueCanvas} class="chart-canvas" style="width:100%;height:200px;"></canvas>
+	{/if}
+
+	<!-- ══ WAREHOUSE TAB ════════════════════════════════════════ -->
+	{#if $preset !== 'flowers' || activeTab === 'warehouse'}
+		<!-- ── Flowers warehouse summary ─────────────────────── -->
+		{#if $preset === 'flowers' && $flowerSorts.length > 0}
+		<section class="section">
+			<h2>🌸 Цветочный склад</h2>
+			<div class="overview-grid">
+				<div class="metric-card">
+					<span class="metric-label">Сортов</span>
+					<span class="metric-value">{$flowerSorts.length}</span>
+				</div>
+				<div class="metric-card">
+					<span class="metric-label">Стеблей</span>
+					<span class="metric-value">{$flowerSorts.reduce((s, f) => s + f.raw_stock, 0)}</span>
+				</div>
+				<div class="metric-card">
+					<span class="metric-label">Упаковок</span>
+					<span class="metric-value">{$flowerSorts.reduce((s, f) => s + f.pkg_stock, 0)}</span>
+				</div>
+				<div class="metric-card accent">
+					<span class="metric-label">Стоимость склада</span>
+					<span class="metric-value">{fmt(warehouseStats.totalValue)}</span>
+				</div>
+				<div class="metric-card">
+					<span class="metric-label">Себестоимость</span>
+					<span class="metric-value">{fmt(warehouseStats.totalCost)}</span>
+				</div>
+				<div class="metric-card">
+					<span class="metric-label">Ср. маржа</span>
+					<span class="metric-value">{warehouseStats.avgMargin}%</span>
+				</div>
+			</div>
+		</section>
+		{/if}
+
+		<!-- Search -->
+		<div class="search-row">
+			<input class="search-input" type="text" bind:value={searchQuery} placeholder={$t('analytics_search_placeholder')} />
 		</div>
-	</div>
 
-	{#if categoryStats.length > 0}
-		<section class="section">
-			<h2>{$t('table_header_category')}</h2>
-			<div class="table-wrapper">
-				<table>
-					<thead>
-						<tr>
-							<th class="sortable" onclick={() => toggleCatSort('category')}>{$t('table_header_category')} {catSortKey === 'category' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
-							<th class="sortable" onclick={() => toggleCatSort('count')}>{$t('table_header_item')} {catSortKey === 'count' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
-							<th class="sortable" onclick={() => toggleCatSort('stock')}>{$t('table_header_stock')} {catSortKey === 'stock' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
-							<th class="sortable" onclick={() => toggleCatSort('sold')}>{$t('table_header_sold')} {catSortKey === 'sold' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
-							<th class="sortable" onclick={() => toggleCatSort('revenue')}>{$t('table_header_revenue')} {catSortKey === 'revenue' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each categoryStats as [category, stats]}
+		{#if categoryStats.length > 0}
+			<section class="section">
+				<h2>{$t('table_header_category')}</h2>
+				<div class="table-wrapper">
+					<table>
+						<thead>
 							<tr>
-								<td>{category}</td>
-								<td>{stats.count}</td>
-								<td>{stats.stock}</td>
-								<td>{stats.sold}</td>
-								<td>{fmt(stats.revenue)}</td>
+								<th class="sortable" onclick={() => toggleCatSort('category')}>{$t('table_header_category')} {catSortKey === 'category' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+								<th class="sortable" onclick={() => toggleCatSort('count')}>{$t('table_header_item')} {catSortKey === 'count' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+								<th class="sortable" onclick={() => toggleCatSort('stock')}>{$t('table_header_stock')} {catSortKey === 'stock' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+								<th class="sortable" onclick={() => toggleCatSort('sold')}>{$t('table_header_sold')} {catSortKey === 'sold' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+								<th class="sortable" onclick={() => toggleCatSort('revenue')}>{$t('table_header_revenue')} {catSortKey === 'revenue' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
 							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		</section>
-	{/if}
+						</thead>
+						<tbody>
+							{#each categoryStats as [category, stats]}
+								<tr>
+									<td>{category}</td>
+									<td>{stats.count}</td>
+									<td>{stats.stock}</td>
+									<td>{stats.sold}</td>
+									<td>{fmt(stats.revenue)}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</section>
+		{/if}
 
-	{#if topSellers.length > 0}
-		<section class="section">
-			<h2>{$t('analytics_top_sellers')}</h2>
-			<div class="table-wrapper">
-				<table>
-					<thead>
-						<tr>
-							<th class="sortable" onclick={() => toggleTopSort('name')}>{$t('table_header_item')} {topSortKey === 'name' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
-							<th class="sortable" onclick={() => toggleTopSort('category')}>{$t('table_header_category')} {topSortKey === 'category' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
-							<th class="sortable" onclick={() => toggleTopSort('sold_count')}>{$t('table_header_sold')} {topSortKey === 'sold_count' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
-							<th class="sortable" onclick={() => toggleTopSort('revenue')}>{$t('table_header_revenue')} {topSortKey === 'revenue' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each topSellers as item}
+		{#if topSellers.length > 0}
+			<section class="section">
+				<h2>{$t('analytics_top_sellers')}</h2>
+				<div class="table-wrapper">
+					<table>
+						<thead>
 							<tr>
-								<td>{item.name}</td>
-								<td>{item.category}</td>
-								<td>{item.sold_count}</td>
-								<td>{fmt(item.revenue)}</td>
+								<th class="sortable" onclick={() => toggleTopSort('name')}>{$t('table_header_item')} {topSortKey === 'name' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+								<th class="sortable" onclick={() => toggleTopSort('category')}>{$t('table_header_category')} {topSortKey === 'category' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+								<th class="sortable" onclick={() => toggleTopSort('sold_count')}>{$t('table_header_sold')} {topSortKey === 'sold_count' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+								<th class="sortable" onclick={() => toggleTopSort('revenue')}>{$t('table_header_revenue')} {topSortKey === 'revenue' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
 							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		</section>
-	{/if}
+						</thead>
+						<tbody>
+							{#each topSellers as item}
+								<tr>
+									<td>{item.name}</td>
+									<td>{item.category}</td>
+									<td>{item.sold_count}</td>
+									<td>{fmt(item.revenue)}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</section>
+		{/if}
 
-	<!-- Supply Run-Rate Table -->
-	{#if runRate.length > 0}
-		<section class="section">
-			<h2>{$t('analytics_run_rate')}</h2>
-			<div class="table-wrapper">
-				<table>
-					<thead>
-						<tr>
-							<th>{$t('table_header_item')}</th>
-							<th>{$t('table_header_stock')}</th>
-							<th>{$t('analytics_weeks_remaining')}</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each runRate as item}
+		<!-- Supply Run-Rate Table -->
+		{#if runRate.length > 0}
+			<section class="section">
+				<h2>{$t('analytics_run_rate')}</h2>
+				<div class="table-wrapper">
+					<table>
+						<thead>
 							<tr>
-								<td>{item.name}</td>
-								<td>{item.stock}</td>
-								<td>
-									<span
-										class="weeks-badge"
-										class:green={item.weeksLeft > 4}
-										class:yellow={item.weeksLeft > 1 && item.weeksLeft <= 4}
-										class:red={item.weeksLeft <= 1}
-									>
-										{item.weeksLeft === Infinity ? '∞' : item.weeksLeft.toFixed(1)}w
-									</span>
-								</td>
+								<th>{$t('table_header_item')}</th>
+								<th>{$t('table_header_stock')}</th>
+								<th>{$t('analytics_weeks_remaining')}</th>
 							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		</section>
-	{/if}
+						</thead>
+						<tbody>
+							{#each runRate as item}
+								<tr>
+									<td>{item.name}</td>
+									<td>{item.stock}</td>
+									<td>
+										<span
+											class="weeks-badge"
+											class:green={item.weeksLeft > 4}
+											class:yellow={item.weeksLeft > 1 && item.weeksLeft <= 4}
+											class:red={item.weeksLeft <= 1}
+										>
+											{item.weeksLeft === Infinity ? '∞' : item.weeksLeft.toFixed(1)}w
+										</span>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</section>
+		{/if}
 
-	<!-- Assembly Dynamics (flowers preset) -->
-	{#if $preset === 'flowers' && packagingLog.length > 0}
-		<section class="section">
-			<h2>{$t('analytics_assembly_dynamics')}</h2>
-			<div class="table-wrapper">
-				<table>
-					<thead>
-						<tr>
-							<th>{$t('table_header_item')}</th>
-							<th>Packs</th>
-							<th>Stems</th>
-							<th>Date</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each packagingLog as entry (entry.id)}
-							<tr>
-								<td>{entry.sort_name}</td>
-								<td>{entry.pack_count}</td>
-								<td>{entry.stems_used}</td>
-								<td>{new Date(entry.created_at).toLocaleDateString()}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+		<!-- Packaging KPIs (flowers) -->
+		{#if $preset === 'flowers'}
+			<div class="tab-section">
+				<h2 class="tab-section-title">Эффективность упаковки</h2>
+				<div class="gh-kpi-row">
+					<div class="gh-kpi">
+						<span class="gh-kpi-val">{packagingLog.reduce((s,e) => s + e.pack_count, 0)}</span>
+						<span class="gh-kpi-label">Всего упаковок</span>
+					</div>
+					<div class="gh-kpi">
+						<span class="gh-kpi-val">{packagingLog.reduce((s,e) => s + e.stems_used, 0)}</span>
+						<span class="gh-kpi-label">Стеблей использовано</span>
+					</div>
+					<div class="gh-kpi">
+						<span class="gh-kpi-val">{packagingLog.length > 0
+							? Math.round(packagingLog.reduce((s,e) => s + e.stems_used, 0) / packagingLog.reduce((s,e) => s + e.pack_count, 1))
+							: 0}</span>
+						<span class="gh-kpi-label">Ср. стеблей/упак.</span>
+					</div>
+				</div>
+				<div class="chart-card">
+					<div class="chart-header">
+						<span class="chart-title">Упаковка по неделям (последние 8 нед.)</span>
+					</div>
+					<PackagingEfficiency log={packagingLog} weeks={8} />
+				</div>
+				{#if packagingLog.length > 0}
+					<div class="sort-breakdown">
+						<h3 class="section-sub">Журнал упаковки</h3>
+						<div class="sort-table-wrap">
+							<table class="sort-table">
+								<thead>
+									<tr><th>Сорт</th><th>Упаковок</th><th>Стеблей</th><th>Дата</th></tr>
+								</thead>
+								<tbody>
+									{#each packagingLog.slice(0, 50) as e (e.id)}
+										<tr>
+											<td class="sort-name-cell">{e.sort_name}</td>
+											<td class="num">{e.pack_count}</td>
+											<td class="num">{e.stems_used}</td>
+											<td class="muted">{new Date(e.created_at).toLocaleDateString('ru')}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				{/if}
 			</div>
-		</section>
+		{/if}
 	{/if}
 
 	<!-- ══ GREENHOUSE TAB ════════════════════════════════════════ -->
@@ -822,64 +885,36 @@
 						</table>
 					</div>
 				{/if}
-			</div>
-		</div>
-	{/if}
 
-	<!-- ══ WAREHOUSE TAB ═════════════════════════════════════════ -->
-	{#if $preset === 'flowers' && activeTab === 'warehouse'}
-		<div class="tab-section">
-			<h2 class="tab-section-title">Склад — эффективность упаковки</h2>
-
-			<!-- Packaging KPIs -->
-			<div class="gh-kpi-row">
-				<div class="gh-kpi">
-					<span class="gh-kpi-val">{packagingLog.reduce((s,e) => s + e.pack_count, 0)}</span>
-					<span class="gh-kpi-label">Всего упаковок</span>
-				</div>
-				<div class="gh-kpi">
-					<span class="gh-kpi-val">{packagingLog.reduce((s,e) => s + e.stems_used, 0)}</span>
-					<span class="gh-kpi-label">Стеблей использовано</span>
-				</div>
-				<div class="gh-kpi">
-					<span class="gh-kpi-val">{packagingLog.length > 0
-						? Math.round(packagingLog.reduce((s,e) => s + e.stems_used, 0) / packagingLog.reduce((s,e) => s + e.pack_count, 1))
-						: 0}</span>
-					<span class="gh-kpi-label">Ср. стеблей/упак.</span>
-				</div>
-			</div>
-
-			<!-- Packaging efficiency chart -->
-			<div class="chart-card">
-				<div class="chart-header">
-					<span class="chart-title">Упаковка по неделям (последние 8 нед.)</span>
-				</div>
-				<PackagingEfficiency log={packagingLog} weeks={8} />
-			</div>
-
-			<!-- Packaging log table -->
-			{#if packagingLog.length > 0}
-				<div class="sort-breakdown">
-					<h3 class="section-sub">Журнал упаковки</h3>
-					<div class="sort-table-wrap">
-						<table class="sort-table">
-							<thead>
-								<tr><th>Сорт</th><th>Упаковок</th><th>Стеблей</th><th>Дата</th></tr>
-							</thead>
-							<tbody>
-								{#each packagingLog.slice(0, 50) as e (e.id)}
+				<!-- Assembly Dynamics -->
+				{#if packagingLog.length > 0}
+					<div class="sort-breakdown">
+						<h3 class="section-sub">Динамика сборки</h3>
+						<div class="sort-table-wrap">
+							<table class="sort-table">
+								<thead>
 									<tr>
-										<td class="sort-name-cell">{e.sort_name}</td>
-										<td class="num">{e.pack_count}</td>
-										<td class="num">{e.stems_used}</td>
-										<td class="muted">{new Date(e.created_at).toLocaleDateString('ru')}</td>
+										<th>Сорт</th>
+										<th>Упаковок</th>
+										<th>Стеблей</th>
+										<th>Дата</th>
 									</tr>
-								{/each}
-							</tbody>
-						</table>
+								</thead>
+								<tbody>
+									{#each packagingLog.slice(0, 30) as entry (entry.id)}
+										<tr>
+											<td class="sort-name-cell">{entry.sort_name}</td>
+											<td class="num">{entry.pack_count}</td>
+											<td class="num">{entry.stems_used}</td>
+											<td class="muted">{new Date(entry.created_at).toLocaleDateString('ru')}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
 					</div>
-				</div>
-			{/if}
+				{/if}
+			</div>
 		</div>
 	{/if}
 
@@ -1081,7 +1116,7 @@
 	.summary-metric.primary .summary-metric-val { color: var(--color-primary); }
 	.summary-metric-val { font-size: 1.3rem; font-weight: 700; color: var(--color-on-surface); line-height: 1; }
 	.summary-metric-label { font-size: 0.68rem; color: var(--color-outline); }
-	.summary-mini-chart { height: 80px; }
+	.summary-mini-chart { height: 80px; overflow: hidden; }
 	.summary-status-row { display: flex; gap: 6px; flex-wrap: wrap; }
 	.status-pill {
 		font-size: 0.7rem; padding: 3px 8px;

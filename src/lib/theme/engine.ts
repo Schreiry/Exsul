@@ -60,40 +60,38 @@ export function generateFullPalette(seedHex: string) {
  * Generate monochrome dark palette — strips saturation for austere, grayscale look.
  * Functional alert colors are handled separately in CSS tokens.
  */
-export function generateMonochromePalette(seedHex: string) {
-	const [h] = hexToHsluv(seedHex);
-
+export function generateMonochromePalette(_seedHex: string) {
+	// Force h=0, s=0 for true greyscale — no hue leakage
 	return {
-		primary: hsluvToHex(h, 4, 65),
-		secondary: hsluvToHex((h + 30) % 360, 3, 55),
-		tertiary: hsluvToHex((h + 320) % 360, 3, 60),
-		surface: hsluvToHex(h, 2, 8),
-		onPrimary: hsluvToHex(h, 2, 95),
-		onSurface: hsluvToHex(h, 2, 90),
-		surfaceContainer: hsluvToHex(h, 2, 14),
-		surfaceContainerHigh: hsluvToHex(h, 2, 20),
-		outline: hsluvToHex(h, 3, 38),
-		outlineVariant: hsluvToHex(h, 2, 25),
+		primary: hsluvToHex(0, 0, 65),
+		secondary: hsluvToHex(0, 0, 55),
+		tertiary: hsluvToHex(0, 0, 60),
+		surface: hsluvToHex(0, 0, 8),
+		onPrimary: hsluvToHex(0, 0, 95),
+		onSurface: hsluvToHex(0, 0, 90),
+		surfaceContainer: hsluvToHex(0, 0, 14),
+		surfaceContainerHigh: hsluvToHex(0, 0, 20),
+		outline: hsluvToHex(0, 0, 38),
+		outlineVariant: hsluvToHex(0, 0, 25),
 	};
 }
 
 /**
  * Generate monochrome light palette — desaturated, clean white surfaces.
  */
-export function generateMonochromeLightPalette(seedHex: string) {
-	const [h] = hexToHsluv(seedHex);
-
+export function generateMonochromeLightPalette(_seedHex: string) {
+	// Force h=0, s=0 for true greyscale — no hue leakage
 	return {
-		primary: hsluvToHex(h, 4, 45),
-		secondary: hsluvToHex((h + 30) % 360, 3, 40),
-		tertiary: hsluvToHex((h + 320) % 360, 3, 48),
-		surface: hsluvToHex(h, 2, 97),
-		onPrimary: hsluvToHex(h, 2, 98),
-		onSurface: hsluvToHex(h, 2, 12),
-		surfaceContainer: hsluvToHex(h, 2, 92),
-		surfaceContainerHigh: hsluvToHex(h, 2, 86),
-		outline: hsluvToHex(h, 3, 50),
-		outlineVariant: hsluvToHex(h, 2, 78),
+		primary: hsluvToHex(0, 0, 45),
+		secondary: hsluvToHex(0, 0, 40),
+		tertiary: hsluvToHex(0, 0, 48),
+		surface: hsluvToHex(0, 0, 97),
+		onPrimary: hsluvToHex(0, 0, 98),
+		onSurface: hsluvToHex(0, 0, 12),
+		surfaceContainer: hsluvToHex(0, 0, 92),
+		surfaceContainerHigh: hsluvToHex(0, 0, 86),
+		outline: hsluvToHex(0, 0, 50),
+		outlineVariant: hsluvToHex(0, 0, 78),
 	};
 }
 

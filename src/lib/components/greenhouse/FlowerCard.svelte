@@ -11,9 +11,27 @@
 
 	let { sort, compact = false, selected = false, onclick }: Props = $props();
 
-	const photoSrc = $derived(
-		sort.photo_path ? convertFileSrc(sort.photo_path) : null
-	);
+	let appDataDir = $state('');
+
+	$effect(() => {
+		import('@tauri-apps/api/path').then(({ appDataDir: getDir }) =>
+			getDir().then((dir) => { appDataDir = dir; })
+		).catch(() => {});
+	});
+
+	function resolvePhotoSrc(photoPath: string | null | undefined, baseDir: string): string | null {
+		if (!photoPath) return null;
+		// If already absolute, use directly
+		if (photoPath.includes(':') || photoPath.startsWith('/')) {
+			return convertFileSrc(photoPath);
+		}
+		// Relative path — prepend appDataDir
+		if (!baseDir) return null;
+		const base = baseDir.endsWith('\\') || baseDir.endsWith('/') ? baseDir : baseDir + '/';
+		return convertFileSrc(base + photoPath.replace(/\\/g, '/'));
+	}
+
+	const photoSrc = $derived(resolvePhotoSrc(sort.photo_path, appDataDir));
 </script>
 
 <button
@@ -29,14 +47,14 @@
 			<img src={photoSrc} alt={sort.name} class="card-img" />
 		{:else}
 			<div class="card-placeholder" aria-hidden="true">
-				<!-- Minimal flower SVG placeholder -->
 				<svg viewBox="0 0 24 24" width="36" height="36" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.35">
-					<path d="M12 12 C10.5 10 10.5 7.5 12 7 C13.5 7.5 13.5 10 12 12"/>
-					<path d="M12 12 C10.5 10 10.5 7.5 12 7 C13.5 7.5 13.5 10 12 12" transform="rotate(72 12 12)"/>
-					<path d="M12 12 C10.5 10 10.5 7.5 12 7 C13.5 7.5 13.5 10 12 12" transform="rotate(144 12 12)"/>
-					<path d="M12 12 C10.5 10 10.5 7.5 12 7 C13.5 7.5 13.5 10 12 12" transform="rotate(216 12 12)"/>
-					<path d="M12 12 C10.5 10 10.5 7.5 12 7 C13.5 7.5 13.5 10 12 12" transform="rotate(288 12 12)"/>
-					<circle cx="12" cy="12" r="2"/>
+					<path d="M12 22 L12 10"/>
+					<path d="M12 17 C9 15.5 7.5 13 9 11"/>
+					<path d="M12 14 C15 12.5 16.5 10 15 8"/>
+					<path d="M12 10 C10 8 9.5 5 12 3"/>
+					<path d="M12 10 C14 8 14.5 5 12 3"/>
+					<path d="M12 10 C9.5 9 8 6.5 9 4.5"/>
+					<path d="M12 10 C14.5 9 16 6.5 15 4.5"/>
 				</svg>
 			</div>
 		{/if}
