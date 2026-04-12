@@ -1,13 +1,21 @@
-import { generateFullPalette, generateLightPalette } from './engine';
+import { generateFullPalette, generateLightPalette, generateMonochromePalette, generateMonochromeLightPalette } from './engine';
+import type { PaletteMode } from '$lib/stores/theme';
 
 /**
  * Apply the generated palette as CSS custom properties on :root,
  * and update the body background gradient to match the seed color.
  */
-export function applyTheme(seedHex: string, mode: 'dark' | 'light' = 'dark') {
-	const palette = mode === 'light'
-		? generateLightPalette(seedHex)
-		: generateFullPalette(seedHex);
+export function applyTheme(seedHex: string, mode: 'dark' | 'light' = 'dark', paletteMode: PaletteMode = 'default') {
+	let palette;
+	if (paletteMode === 'monochrome') {
+		palette = mode === 'light'
+			? generateMonochromeLightPalette(seedHex)
+			: generateMonochromePalette(seedHex);
+	} else {
+		palette = mode === 'light'
+			? generateLightPalette(seedHex)
+			: generateFullPalette(seedHex);
+	}
 
 	const root = document.documentElement;
 

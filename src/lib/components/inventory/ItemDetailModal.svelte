@@ -4,6 +4,7 @@
 	import { commands } from '$lib/tauri/commands';
 	import { convertFileSrc } from '@tauri-apps/api/core';
 	import { globalCurrency, itemCurrencies, formatAmount, setItemCurrency, CURRENCIES } from '$lib/stores/currency';
+	import GlassDropdown from '$lib/components/common/GlassDropdown.svelte';
 	import type { Item } from '$lib/tauri/types';
 
 	interface Props {
@@ -39,6 +40,7 @@
 	let isDragOver = $state(false);
 	let previewUrl = $state<string | null>(null);
 	let pendingImageBase64 = $state<string | null>(null);
+	let selectedCurrency = $state('');
 
 	// Reset draft whenever a new item is opened
 	$effect(() => {
@@ -55,6 +57,14 @@
 			editMode = false;
 			previewUrl = null;
 			pendingImageBase64 = null;
+			selectedCurrency = itemCurrency;
+		}
+	});
+
+	// Sync currency dropdown selection back to store
+	$effect(() => {
+		if (item && selectedCurrency && selectedCurrency !== itemCurrency) {
+			setItemCurrency(item.id, selectedCurrency);
 		}
 	});
 
@@ -300,16 +310,11 @@
 				</div>
 				<div class="field">
 					<label class="field-label" for="edit-currency">{$t('label_item_currency')}</label>
-					<select
-						id="edit-currency"
-						class="field-input"
-						value={itemCurrency}
-						onchange={(e) => setItemCurrency(item.id, (e.currentTarget as HTMLSelectElement).value)}
-					>
-						{#each CURRENCIES as c}
-							<option value={c.code}>{c.symbol} {c.code} — {c.name}</option>
-						{/each}
-					</select>
+					<GlassDropdown
+						items={CURRENCIES.map(c => ({ value: c.code, label: `${c.symbol} ${c.code} — ${c.name}` }))}
+						bind:value={selectedCurrency}
+						placeholder="— Currency —"
+					/>
 				</div>
 			</div>
 

@@ -127,6 +127,13 @@ export interface Order {
 	notes?: string;
 	created_at: string;
 	updated_at: string;
+	// Extended fields (migration 011)
+	customer_company?: string;
+	delivery_address?: string;
+	delivery_notes?: string;
+	pack_count_ordered: number;
+	pack_count_ready: number;
+	deadline_confirmed: boolean;
 }
 
 export interface OrderItem {
@@ -216,6 +223,10 @@ export interface FlowerSort {
 	flowers_per_pack_override?: number;
 	created_at: string;
 	updated_at: string;
+	// Extended fields (migration 010)
+	photo_path?: string;
+	description?: string;
+	total_harvested: number;
 }
 
 export interface CreateFlowerSortPayload {
@@ -225,6 +236,7 @@ export interface CreateFlowerSortPayload {
 	purchase_price?: number;
 	sell_price_stem?: number;
 	flowers_per_pack_override?: number;
+	description?: string;
 }
 
 export interface UpdateFlowerSortPayload {
@@ -237,6 +249,8 @@ export interface UpdateFlowerSortPayload {
 	purchase_price?: number;
 	sell_price_stem?: number;
 	flowers_per_pack_override?: number;
+	description?: string;
+	photo_path?: string;
 }
 
 export interface PackageResult {
@@ -245,6 +259,15 @@ export interface PackageResult {
 	new_pkg_stock: number;
 	stems_used: number;
 	packs_created: number;
+}
+
+export interface PackagingLogEntry {
+	id: string;
+	sort_id: string;
+	sort_name: string;
+	pack_count: number;
+	stems_used: number;
+	created_at: string;
 }
 
 // ============================================================
@@ -306,4 +329,56 @@ export interface CreatePackAssignmentPayload {
 	pack_count: number;
 	stems_per_pack: number;
 	note?: string;
+}
+
+// ============================================================
+// Greenhouse harvest log (migration 010)
+// ============================================================
+
+export type HarvestReason = 'manual' | 'packaged' | 'correction';
+
+export interface HarvestLogEntry {
+	id: string;
+	sort_id: string;
+	sort_name: string;
+	delta: number;
+	reason: HarvestReason;
+	note?: string;
+	created_at: string;
+}
+
+// ============================================================
+// Order shortage (calculated on-the-fly)
+// ============================================================
+
+export interface OrderShortage {
+	order_id: string;
+	customer_name: string;
+	sort_id: string;
+	sort_name: string;
+	ordered_packs: number;
+	available_packs: number;
+	shortage: number;
+}
+
+// ============================================================
+// App settings (migration 012)
+// ============================================================
+
+export type SettingValueType = 'string' | 'number' | 'bool' | 'json';
+
+export interface AppSetting {
+	key: string;
+	value: string;
+	value_type: SettingValueType;
+}
+
+// ============================================================
+// Version info
+// ============================================================
+
+export interface VersionInfo {
+	app_version: string;
+	db_schema_version: number;
+	min_compatible_version: string;
 }

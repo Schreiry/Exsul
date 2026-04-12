@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { auditLog } from '$lib/stores/audit';
 	import { t } from '$lib/stores/i18n';
+	import GlassDropdown from '$lib/components/common/GlassDropdown.svelte';
 	import { formatDateTime, formatTime, formatDayLabel, groupByDay } from '$lib/utils/time';
 	import type { AuditLogFilter } from '$lib/tauri/types';
 
@@ -101,12 +102,13 @@
 
 	<!-- Filters -->
 	<div class="filter-bar">
-		<select class="filter-input" bind:value={filterType}>
-			<option value="">Все действия</option>
-			{#each actionTypes as at}
-				<option value={at.id}>{at.label}</option>
-			{/each}
-		</select>
+		<div class="filter-dropdown">
+			<GlassDropdown
+				items={[{ value: '', label: 'Все действия' }, ...actionTypes.map(at => ({ value: at.id, label: at.label }))]}
+				bind:value={filterType}
+				placeholder="Все действия"
+			/>
+		</div>
 		<input class="filter-input date-input" type="date" bind:value={filterSince} title="С даты" />
 		<input class="filter-input date-input" type="date" bind:value={filterUntil} title="По дату" />
 		<button class="btn-primary" onclick={applyFilters}>Применить</button>
@@ -207,6 +209,8 @@
 		align-items: center;
 		margin-bottom: 24px;
 	}
+
+	.filter-dropdown { flex: 1; min-width: 180px; }
 
 	.filter-input {
 		background: var(--glass-bg);

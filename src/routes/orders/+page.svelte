@@ -1,16 +1,42 @@
 <script lang="ts">
 	import { orders } from '$lib/stores/orders';
 	import { inventory } from '$lib/stores/inventory';
+	import { flowerSorts } from '$lib/stores/flowers';
+	import { preset } from '$lib/stores/preset';
 	import { t } from '$lib/stores/i18n';
-	import type { CreateOrderPayload, AddOrderItemPayload, OrderStatus } from '$lib/tauri/types';
+	import { globalCurrency, formatAmount } from '$lib/stores/currency';
+	import GlassDropdown from '$lib/components/common/GlassDropdown.svelte';
+	import OrderProgressBar from '$lib/components/orders/OrderProgressBar.svelte';
+	import OrderDetailModal from '$lib/components/orders/OrderDetailModal.svelte';
+	import { formatCountdown } from '$lib/utils/countdown';
+	import type { CreateOrderPayload, AddOrderItemPayload, OrderStatus, OrderItem, Order } from '$lib/tauri/types';
+
+	const isFlowers = $derived($preset === 'flowers');
 
 	$effect(() => {
 		orders.load();
+		if (isFlowers) flowerSorts.load();
 	});
 
 	type FilterTab = 'all' | OrderStatus;
 	let activeTab = $state<FilterTab>('all');
 	let showForm = $state(false);
+	let detailOrder = $state<Order | null>(null);
+
+	// Live countdown — one shared timer updates all cards each minute
+	let countdowns = $state<Record<string, string>>({});
+	$effect(() => {
+		function updateCountdowns() {
+			const next: Record<string, string> = {};
+			for (const o of $orders) {
+				if (o.deadline) next[o.id] = formatCountdown(o.deadline);
+			}
+			countdowns = next;
+		}
+		updateCountdowns();
+		const id = setInterval(updateCountdowns, 60_000);
+		return () => clearInterval(id);
+	});
 
 	let formData = $state<CreateOrderPayload>({
 		customer_name: '',
@@ -28,30 +54,6 @@
 		activeTab === 'all' ? $orders : $orders.filter((o) => o.status === activeTab)
 	);
 
-	function statusToPercent(status: string): number {
-		switch (status) {
-			case 'pending': return 0;
-			case 'in_progress': return 50;
-			case 'completed': return 100;
-			case 'cancelled': return 0;
-			default: return 0;
-		}
-	}
-
-	function percentToStatus(value: number): string {
-		if (value <= 25) return 'pending';
-		if (value <= 75) return 'in_progress';
-		return 'completed';
-	}
-
-	function formatDeadline(deadline: string): string {
-		const target = new Date(deadline).getTime();
-		const now = Date.now();
-		const diffDays = Math.round((target - now) / (1000 * 60 * 60 * 24));
-		if (diffDays === 0) return $t('deadline_today');
-		if (diffDays > 0) return $t('deadline_in_days', { n: diffDays });
-		return $t('deadline_overdue', { n: Math.abs(diffDays) });
-	}
 
 	const statusColors: Record<string, string> = {
 		pending: '#f59e0b',
@@ -60,11 +62,19 @@
 		cancelled: '#6b7280',
 	};
 
-	async function handleProgressChange(orderId: string, e: Event) {
-		const val = parseInt((e.currentTarget as HTMLInputElement).value, 10);
-		const newStatus = percentToStatus(val);
-		await orders.updateStatus(orderId, newStatus);
-	}
+	// Shortage detection for flowers preset
+	const shortages = $derived.by(() => {
+		if (!isFlowers) return new Map<number, number>();
+		const map = new Map<number, number>();
+		for (let i = 0; i < pendingItems.length; i++) {
+			const item = pendingItems[i];
+			const sort = $flowerSorts.find((s) => s.id === item.item_id);
+			if (sort && item.quantity > sort.pkg_stock) {
+				map.set(i, item.quantity - sort.pkg_stock);
+			}
+		}
+		return map;
+	});
 
 	function addPendingItem() {
 		if (!newItemRow.item_id) return;
@@ -91,6 +101,38 @@
 		formData = { customer_name: '', customer_email: '', customer_phone: '', deadline: '', notes: '' };
 		pendingItems = [];
 		showForm = false;
+	}
+
+	async function printPreorder(order: typeof filteredOrders[0]) {
+		const items = await orders.getItems(order.id);
+		const el = document.createElement('div');
+		el.className = 'print-preorder';
+
+		const itemRows = items.map((it: OrderItem) => {
+			const name = isFlowers
+				? ($flowerSorts.find(s => s.id === it.item_id)?.name ?? it.item_id)
+				: ($inventory.find(inv => inv.id === it.item_id)?.name ?? it.item_id);
+			const lineTotal = it.quantity * it.unit_price;
+			return `<tr><td>${name}</td><td>${it.quantity}</td><td>${formatAmount(it.unit_price, $globalCurrency)}</td><td>${formatAmount(lineTotal, $globalCurrency)}</td></tr>`;
+		}).join('');
+
+		el.innerHTML = `
+			<h1>${$t('action_print_preorder')}</h1>
+			<p><strong>${$t('label_customer_name')}:</strong> ${order.customer_name}</p>
+			${order.customer_phone ? `<p><strong>${$t('label_customer_phone')}:</strong> ${order.customer_phone}</p>` : ''}
+			${order.customer_email ? `<p><strong>${$t('label_customer_email')}:</strong> ${order.customer_email}</p>` : ''}
+			${order.deadline ? `<p><strong>${$t('label_deadline')}:</strong> ${new Date(order.deadline).toLocaleString()}</p>` : ''}
+			<table>
+				<thead><tr><th>${$t('label_name')}</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+				<tbody>${itemRows}</tbody>
+			</table>
+			<p class="grand-total"><strong>Total: ${formatAmount(order.total_amount, $globalCurrency)}</strong></p>
+			${order.notes ? `<p><em>${order.notes}</em></p>` : ''}
+		`;
+
+		document.body.appendChild(el);
+		window.print();
+		document.body.removeChild(el);
 	}
 
 	const tabs: { key: FilterTab; label: string }[] = [
@@ -139,20 +181,32 @@
 			<div class="order-items-section">
 				<h3>{$t('action_add_order_item')}</h3>
 				{#each pendingItems as item, i}
-					<div class="item-row">
-						<span>{$inventory.find(it => it.id === item.item_id)?.name ?? item.item_id}</span>
+					<div class="item-row" class:item-shortage={shortages.has(i)}>
+						<span>{isFlowers
+							? ($flowerSorts.find(s => s.id === item.item_id)?.name ?? item.item_id)
+							: ($inventory.find(it => it.id === item.item_id)?.name ?? item.item_id)
+						}</span>
 						<span>x{item.quantity}</span>
 						<span>{item.unit_price.toFixed(2)}</span>
 						<button class="btn-ghost" onclick={() => removePendingItem(i)}>×</button>
 					</div>
+					{#if shortages.has(i)}
+						<div class="shortage-alert">
+							<span class="shortage-icon">⚠</span>
+							<span>{$t('shortage_alert')} — {$t('shortage_deficit', { n: shortages.get(i)! })}</span>
+						</div>
+					{/if}
 				{/each}
 				<div class="add-item-row">
-					<select bind:value={newItemRow.item_id}>
-						<option value="">— {$t('label_name')} —</option>
-						{#each $inventory as item}
-							<option value={item.id}>{item.name}</option>
-						{/each}
-					</select>
+					<div class="add-item-dropdown">
+						<GlassDropdown
+							items={isFlowers
+								? $flowerSorts.map(s => ({ value: s.id, label: s.name + (s.variety ? ` — ${s.variety}` : '') }))
+								: $inventory.map(it => ({ value: it.id, label: it.name }))}
+							bind:value={newItemRow.item_id}
+							placeholder="— {$t('label_name')} —"
+						/>
+					</div>
 					<input type="number" min="1" bind:value={newItemRow.quantity} placeholder="Qty" />
 					<input type="number" min="0" step="0.01" bind:value={newItemRow.unit_price} placeholder="Price" />
 					<button class="btn-secondary" onclick={addPendingItem}>+</button>
@@ -185,40 +239,55 @@
 	{:else}
 		<div class="order-list">
 			{#each filteredOrders as order (order.id)}
-				<div class="order-card">
+				<div class="order-card" role="button" tabindex="0"
+					onclick={() => (detailOrder = order)}
+					onkeydown={(e) => e.key === 'Enter' && (detailOrder = order)}
+				>
 					<div class="order-header">
 						<div class="order-meta">
 							<span class="customer-name">{order.customer_name}</span>
-							{#if order.deadline}
-								<span class="deadline" class:overdue={new Date(order.deadline) < new Date()}>
-									{formatDeadline(order.deadline)}
+							{#if order.delivery_address}
+								<span class="order-location">
+									<svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+									{order.delivery_address}
 								</span>
 							{/if}
 						</div>
 						<div class="order-right">
 							<span class="status-dot" style:background={statusColors[order.status]}></span>
 							<span class="status-label">{$t('status_' + order.status)}</span>
-							<span class="amount">
-								{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(order.total_amount)}
-							</span>
+							<span class="amount">{formatAmount(order.total_amount, $globalCurrency)}</span>
 						</div>
 					</div>
 
-					{#if order.status !== 'cancelled'}
-						<div class="progress-row">
-							<input
-								type="range"
-								min="0"
-								max="100"
-								value={statusToPercent(order.status)}
-								oninput={(e) => handleProgressChange(order.id, e)}
-								class="progress-slider"
-								aria-label="{$t('label_progress')} {order.customer_name}"
-							/>
+					<!-- Deadline + live countdown -->
+					{#if order.deadline}
+						<div class="deadline-row" class:overdue={new Date(order.deadline) < new Date()}>
+							<svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+							<span class="deadline-date">{new Date(order.deadline).toLocaleString('ru', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+							{#if countdowns[order.id]}
+								<span class="countdown" class:overdue={countdowns[order.id] === 'просрочен'}>
+									{countdowns[order.id]}
+								</span>
+							{/if}
 						</div>
-					{:else}
-						<div class="cancelled-bar"></div>
 					{/if}
+
+					<!-- Progress bar (replaces slider) -->
+					<div class="progress-row" role="presentation" onclick={(e) => e.stopPropagation()}>
+						<OrderProgressBar
+							status={order.status}
+							onchange={(s) => orders.updateStatus(order.id, s)}
+						/>
+					</div>
+
+					<div class="order-actions" role="presentation" onclick={(e) => e.stopPropagation()}>
+						<button class="btn-ghost btn-print" onclick={() => printPreorder(order)}>
+							<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+							{$t('action_print_preorder')}
+						</button>
+						<span class="detail-hint">Нажмите для деталей →</span>
+					</div>
 
 					{#if order.notes}
 						<p class="order-notes">{order.notes}</p>
@@ -228,6 +297,13 @@
 		</div>
 	{/if}
 </div>
+
+{#if detailOrder}
+	<OrderDetailModal
+		bind:order={detailOrder}
+		onclose={() => (detailOrder = null)}
+	/>
+{/if}
 
 <style>
 	.page { max-width: 900px; margin: 0 auto; }
@@ -284,7 +360,6 @@
 	}
 
 	.field input,
-	.field select,
 	.field textarea {
 		background: var(--color-surface-container-high);
 		border: 1px solid var(--color-outline-variant);
@@ -298,7 +373,6 @@
 	}
 
 	.field input:focus,
-	.field select:focus,
 	.field textarea:focus {
 		border-color: var(--color-primary);
 	}
@@ -336,10 +410,9 @@
 		margin-top: 10px;
 	}
 
-	.add-item-row select { flex: 2; }
+	.add-item-dropdown { flex: 2; }
 	.add-item-row input { flex: 1; }
 
-	.add-item-row select,
 	.add-item-row input {
 		background: var(--color-surface-container-high);
 		border: 1px solid var(--color-outline-variant);
@@ -418,14 +491,31 @@
 		color: var(--color-on-surface);
 	}
 
-	.deadline {
+	/* Deadline row with live countdown */
+	.deadline-row {
+		display: flex;
+		align-items: center;
+		gap: 5px;
 		font-size: 0.75rem;
-		color: var(--color-primary);
-		opacity: 0.8;
+		color: var(--color-outline);
+		margin-bottom: 6px;
+	}
+	.deadline-row.overdue { color: var(--color-alert-red, #ef4444); }
+	.deadline-date { font-weight: 500; color: var(--color-on-surface); opacity: 0.8; }
+	.countdown { color: var(--color-primary); font-weight: 500; }
+	.countdown.overdue { color: var(--color-alert-red, #ef4444); }
+
+	/* Location chip */
+	.order-location {
+		display: flex; align-items: center; gap: 3px;
+		font-size: 0.72rem; color: var(--color-outline);
+		margin-top: 2px;
+		white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
 	}
 
-	.deadline.overdue {
-		color: #ef4444;
+	/* Detail hint */
+	.detail-hint {
+		font-size: 0.7rem; color: var(--color-outline); opacity: 0.6; margin-left: auto;
 	}
 
 	.order-right {
@@ -454,50 +544,18 @@
 	}
 
 	.progress-row {
-		margin-bottom: 8px;
+		margin: 8px 0;
+		padding: 4px 0;
 	}
 
-	.progress-slider {
-		-webkit-appearance: none;
-		appearance: none;
-		width: 100%;
-		height: 4px;
-		border-radius: 2px;
-		background: var(--color-outline-variant);
+	/* Clickable card */
+	.order-card {
 		cursor: pointer;
-		outline: none;
+		transition: transform 0.12s var(--ease-spring), box-shadow 0.12s;
 	}
-
-	.progress-slider::-webkit-slider-thumb {
-		-webkit-appearance: none;
-		width: 14px;
-		height: 14px;
-		border-radius: 50%;
-		background: var(--color-primary);
-		border: none;
-		cursor: pointer;
-		transition: transform 0.1s;
-	}
-
-	.progress-slider::-webkit-slider-thumb:hover {
-		transform: scale(1.2);
-	}
-
-	.progress-slider::-moz-range-thumb {
-		width: 14px;
-		height: 14px;
-		border-radius: 50%;
-		background: var(--color-primary);
-		border: none;
-		cursor: pointer;
-	}
-
-	.cancelled-bar {
-		height: 4px;
-		background: var(--color-outline-variant);
-		border-radius: 2px;
-		opacity: 0.4;
-		margin-bottom: 8px;
+	.order-card:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 6px 20px rgba(0,0,0,0.2);
 	}
 
 	.order-notes {
@@ -546,7 +604,64 @@
 
 	.btn-ghost:hover { opacity: 1; background: var(--color-surface-container-high); }
 
+	/* Shortage alerts */
+	.item-shortage {
+		border-color: var(--color-alert-red) !important;
+	}
+
+	.shortage-alert {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 10px;
+		margin-bottom: 4px;
+		background: rgba(239, 68, 68, 0.1);
+		border: 1px solid var(--color-alert-red);
+		border-radius: 6px;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-alert-red);
+	}
+
+	.shortage-icon {
+		font-size: 0.9rem;
+	}
+
+	/* Order actions */
+	.order-actions {
+		display: flex;
+		gap: 8px;
+		margin-bottom: 4px;
+	}
+
+	.btn-print {
+		font-size: 0.75rem;
+	}
+
 	@media (max-width: 600px) {
 		.form-grid { grid-template-columns: 1fr; }
+	}
+
+	/* Print styles */
+	@media print {
+		.page, .tabs, .order-list, .page-header, .form-card { display: none !important; }
+		:global(.dock-container), :global(.logo-watermark), :global(.sync-indicator) { display: none !important; }
+
+		:global(.print-preorder) {
+			display: block !important;
+			position: fixed;
+			inset: 0;
+			background: white;
+			color: black;
+			padding: 40px;
+			font-family: serif;
+			font-size: 14px;
+			z-index: 99999;
+		}
+		:global(.print-preorder h1) { font-size: 20px; margin-bottom: 16px; }
+		:global(.print-preorder table) { width: 100%; border-collapse: collapse; margin: 16px 0; }
+		:global(.print-preorder th),
+		:global(.print-preorder td) { border: 1px solid #333; padding: 6px 10px; text-align: left; }
+		:global(.print-preorder .grand-total) { font-size: 16px; margin-top: 12px; }
 	}
 </style>

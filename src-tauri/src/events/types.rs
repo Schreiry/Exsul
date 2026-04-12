@@ -144,6 +144,13 @@ pub struct Order {
     pub notes: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    // Extended fields (migration 011)
+    pub customer_company: Option<String>,
+    pub delivery_address: Option<String>,
+    pub delivery_notes: Option<String>,
+    pub pack_count_ordered: i32,
+    pub pack_count_ready: i32,
+    pub deadline_confirmed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,6 +272,10 @@ pub struct FlowerSort {
     pub flowers_per_pack_override: Option<i32>,
     pub created_at: String,
     pub updated_at: String,
+    // Extended fields (migration 010)
+    pub photo_path: Option<String>,
+    pub description: Option<String>,
+    pub total_harvested: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -275,6 +286,7 @@ pub struct CreateFlowerSortPayload {
     pub purchase_price: Option<f64>,
     pub sell_price_stem: Option<f64>,
     pub flowers_per_pack_override: Option<i32>,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -288,11 +300,23 @@ pub struct UpdateFlowerSortPayload {
     pub purchase_price: Option<f64>,
     pub sell_price_stem: Option<f64>,
     pub flowers_per_pack_override: Option<i32>,
+    pub description: Option<String>,
+    pub photo_path: Option<String>,
 }
 
 // ============================================================
 // Flower ERP — Packaging
 // ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackagingLogEntry {
+    pub id: String,
+    pub sort_id: String,
+    pub sort_name: String,
+    pub pack_count: i32,
+    pub stems_used: i32,
+    pub created_at: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageResult {
@@ -375,4 +399,56 @@ pub struct WsServerStatus {
     pub running: bool,
     pub port: u16,
     pub peers: Vec<WsPeerStatus>,
+}
+
+// ============================================================
+// Greenhouse harvest log (migration 010)
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HarvestLogEntry {
+    pub id: String,
+    pub sort_id: String,
+    pub sort_name: String,
+    pub delta: i32,
+    pub reason: String,
+    pub note: Option<String>,
+    pub created_at: String,
+}
+
+// ============================================================
+// Order shortage (calculated on-the-fly, not stored in DB)
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderShortage {
+    pub order_id: String,
+    pub customer_name: String,
+    pub sort_id: String,
+    pub sort_name: String,
+    pub ordered_packs: i32,
+    pub available_packs: i32,
+    pub shortage: i32,
+}
+
+// ============================================================
+// App settings (migration 012)
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppSetting {
+    pub key: String,
+    pub value: String,
+    pub value_type: String,
+}
+
+// ============================================================
+// Version info (extended)
+// ============================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionInfo {
+    pub app_version: String,
+    pub db_schema_version: i32,
+    pub min_compatible_version: String,
 }

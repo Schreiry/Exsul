@@ -5,7 +5,7 @@ mod sync;
 
 use sync::hlc::HybridLogicalClock;
 use sync::websocket::WsManager;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,6 +37,22 @@ pub fn run() {
             let h = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 sync::websocket::start_server(h, ws_manager).await;
+            });
+
+            // On startup: check for overdue unconfirmed orders and emit event to frontend
+            let h2 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                let overdue_result = {
+                    let db_state = h2.state::<db::Database>();
+                    let conn = db_state.conn.lock().ok();
+                    conn.and_then(|c| db::queries::get_overdue_unconfirmed_orders(&c).ok())
+                };
+                if let Some(overdue) = overdue_result {
+                    if !overdue.is_empty() {
+                        let _ = h2.emit("overdue-orders", overdue);
+                    }
+                }
             });
 
             Ok(())
@@ -77,6 +93,7 @@ pub fn run() {
             commands::orders::get_orders,
             commands::orders::get_order,
             commands::orders::add_order_item,
+            commands::orders::get_order_items,
             // ── App Preset & Trusted Nodes ──
             commands::preset::get_app_preset,
             commands::preset::set_app_preset,
@@ -94,6 +111,7 @@ pub fn run() {
             commands::flowers::package_flowers,
             commands::flowers::create_pack_assignment,
             commands::flowers::get_pack_assignments,
+            commands::flowers::get_packaging_log,
             commands::flowers::update_pack_status,
             // ── WebSocket P2P ──
             commands::ws::start_ws_server,
@@ -101,6 +119,20 @@ pub fn run() {
             commands::ws::get_ws_status,
             // ── App Version ──
             commands::version::get_app_version,
+            commands::version::get_version_info,
+            // ── Greenhouse ──
+            commands::greenhouse::save_flower_photo,
+            commands::greenhouse::log_greenhouse_harvest,
+            commands::greenhouse::get_harvest_log,
+            // ── Orders extended ──
+            commands::orders::update_order_extended,
+            commands::orders::confirm_order_deadline,
+            commands::orders::get_overdue_unconfirmed_orders,
+            commands::orders::check_order_shortages,
+            // ── App Settings ──
+            commands::app_settings::get_setting,
+            commands::app_settings::set_setting,
+            commands::app_settings::get_all_settings,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

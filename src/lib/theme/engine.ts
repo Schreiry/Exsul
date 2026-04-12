@@ -57,6 +57,47 @@ export function generateFullPalette(seedHex: string) {
 }
 
 /**
+ * Generate monochrome dark palette — strips saturation for austere, grayscale look.
+ * Functional alert colors are handled separately in CSS tokens.
+ */
+export function generateMonochromePalette(seedHex: string) {
+	const [h] = hexToHsluv(seedHex);
+
+	return {
+		primary: hsluvToHex(h, 4, 65),
+		secondary: hsluvToHex((h + 30) % 360, 3, 55),
+		tertiary: hsluvToHex((h + 320) % 360, 3, 60),
+		surface: hsluvToHex(h, 2, 8),
+		onPrimary: hsluvToHex(h, 2, 95),
+		onSurface: hsluvToHex(h, 2, 90),
+		surfaceContainer: hsluvToHex(h, 2, 14),
+		surfaceContainerHigh: hsluvToHex(h, 2, 20),
+		outline: hsluvToHex(h, 3, 38),
+		outlineVariant: hsluvToHex(h, 2, 25),
+	};
+}
+
+/**
+ * Generate monochrome light palette — desaturated, clean white surfaces.
+ */
+export function generateMonochromeLightPalette(seedHex: string) {
+	const [h] = hexToHsluv(seedHex);
+
+	return {
+		primary: hsluvToHex(h, 4, 45),
+		secondary: hsluvToHex((h + 30) % 360, 3, 40),
+		tertiary: hsluvToHex((h + 320) % 360, 3, 48),
+		surface: hsluvToHex(h, 2, 97),
+		onPrimary: hsluvToHex(h, 2, 98),
+		onSurface: hsluvToHex(h, 2, 12),
+		surfaceContainer: hsluvToHex(h, 2, 92),
+		surfaceContainerHigh: hsluvToHex(h, 2, 86),
+		outline: hsluvToHex(h, 3, 50),
+		outlineVariant: hsluvToHex(h, 2, 78),
+	};
+}
+
+/**
  * Generate extended light-mode palette — near-white surfaces, dark text.
  * Primary/secondary/tertiary hues are preserved from the seed.
  */

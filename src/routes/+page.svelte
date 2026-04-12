@@ -8,6 +8,36 @@
 	import { t } from '$lib/stores/i18n';
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
 
+	type WidgetId = 'sync' | 'orders' | 'inventory' | 'chart' | 'activity';
+	const ALL_WIDGETS: WidgetId[] = ['sync', 'orders', 'inventory', 'chart', 'activity'];
+
+	function loadVisibleWidgets(): Set<WidgetId> {
+		try {
+			const raw = localStorage.getItem('dashboard-widgets');
+			if (raw) return new Set(JSON.parse(raw) as WidgetId[]);
+		} catch { /* ignore */ }
+		return new Set(ALL_WIDGETS);
+	}
+
+	let visibleWidgets = $state(loadVisibleWidgets());
+	let showWidgetMenu = $state(false);
+
+	function toggleWidget(id: WidgetId) {
+		const next = new Set(visibleWidgets);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		visibleWidgets = next;
+		localStorage.setItem('dashboard-widgets', JSON.stringify([...next]));
+	}
+
+	const widgetLabels: Record<WidgetId, string> = {
+		sync: $t('widget_sync'),
+		orders: $t('widget_orders'),
+		inventory: $t('widget_inventory'),
+		chart: $t('widget_chart'),
+		activity: $t('widget_activity'),
+	};
+
 	let chartCanvas = $state<HTMLCanvasElement | null>(null);
 
 	$effect(() => {
@@ -118,9 +148,26 @@
 	<header class="cc-header">
 		<div class="cc-title-row">
 			<h1 class="cc-title">{$t('page_control_center_title')}</h1>
-			<div class="cc-node-badge" class:online={$wsServerRunning}>
-				<span class="cc-node-dot"></span>
-				<span class="cc-node-id">{truncateId($nodeId)}</span>
+			<div class="cc-header-actions">
+				<div class="widget-menu-wrap">
+					<button class="widget-gear-btn" onclick={() => (showWidgetMenu = !showWidgetMenu)} aria-label={$t('dashboard_widget_toggle')}>
+						⚙
+					</button>
+					{#if showWidgetMenu}
+						<div class="widget-menu">
+							{#each ALL_WIDGETS as wid}
+								<label class="widget-toggle">
+									<input type="checkbox" checked={visibleWidgets.has(wid)} onchange={() => toggleWidget(wid)} />
+									<span>{widgetLabels[wid]}</span>
+								</label>
+							{/each}
+						</div>
+					{/if}
+				</div>
+				<div class="cc-node-badge" class:online={$wsServerRunning}>
+					<span class="cc-node-dot"></span>
+					<span class="cc-node-id">{truncateId($nodeId)}</span>
+				</div>
 			</div>
 		</div>
 	</header>
@@ -128,6 +175,7 @@
 	<div class="bento-grid">
 
 		<!-- ── SYNC STATUS ────────────────────────────────────── -->
+		{#if visibleWidgets.has('sync')}
 		<div class="bento-card bento-sync">
 			<div class="bento-card-header accent-sync">
 				<span class="bento-icon">⚡</span>
@@ -162,7 +210,10 @@
 			</div>
 		</div>
 
+		{/if}
+
 		<!-- ── ORDERS ─────────────────────────────────────────── -->
+		{#if visibleWidgets.has('orders')}
 		<div class="bento-card bento-orders">
 			<div class="bento-card-header accent-orders">
 				<span class="bento-icon">📋</span>
@@ -198,7 +249,10 @@
 			</div>
 		</div>
 
+		{/if}
+
 		<!-- ── INVENTORY SUMMARY ──────────────────────────────── -->
+		{#if visibleWidgets.has('inventory')}
 		<div class="bento-card bento-inventory">
 			<div class="bento-card-header accent-inventory">
 				<span class="bento-icon">📦</span>
@@ -246,7 +300,10 @@
 			</div>
 		</div>
 
+		{/if}
+
 		<!-- ── ANALYTICS MINI-CHART ───────────────────────────── -->
+		{#if visibleWidgets.has('chart')}
 		<div class="bento-card bento-chart bento-chart-wide">
 			<div class="bento-card-header accent-chart">
 				<span class="bento-icon">📈</span>
@@ -263,7 +320,10 @@
 			</div>
 		</div>
 
+		{/if}
+
 		<!-- ── RECENT ACTIVITY ────────────────────────────────── -->
+		{#if visibleWidgets.has('activity')}
 		<div class="bento-card bento-activity">
 			<div class="bento-card-header accent-activity">
 				<span class="bento-icon">🕐</span>
@@ -285,6 +345,8 @@
 				{/if}
 			</div>
 		</div>
+
+		{/if}
 
 	</div>
 </div>
@@ -735,4 +797,76 @@
 
 	/* ── Color tokens ── */
 	.color-revenue  { color: var(--color-primary); }
+
+	/* ── Widget menu ── */
+	.cc-header-actions {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.widget-menu-wrap {
+		position: relative;
+	}
+
+	.widget-gear-btn {
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		color: var(--color-on-surface);
+		font-size: 1.1rem;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: background 0.15s, transform 0.15s;
+	}
+
+	.widget-gear-btn:hover {
+		background: var(--glass-bg-hover);
+		transform: rotate(30deg);
+	}
+
+	.widget-menu {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		z-index: 1200;
+		min-width: 180px;
+		padding: 8px;
+		background: rgba(18, 18, 22, 0.92);
+		backdrop-filter: blur(24px) saturate(180%);
+		-webkit-backdrop-filter: blur(24px) saturate(180%);
+		border: 1px solid var(--glass-border);
+		border-radius: 12px;
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	:global([data-theme="light"]) .widget-menu {
+		background: rgba(248, 248, 252, 0.95);
+	}
+
+	.widget-toggle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 8px;
+		border-radius: 6px;
+		font-size: 0.82rem;
+		color: var(--color-on-surface);
+		cursor: pointer;
+		transition: background 0.1s;
+	}
+
+	.widget-toggle:hover { background: rgba(255, 255, 255, 0.06); }
+
+	.widget-toggle input[type="checkbox"] {
+		accent-color: var(--color-primary);
+		cursor: pointer;
+	}
 </style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { seedColor, colorMode, uiScale } from '$lib/stores/theme';
+	import { seedColor, colorMode, uiScale, paletteMode } from '$lib/stores/theme';
 	import { nodeId, syncPeers, loadSyncState } from '$lib/stores/sync';
 	import { locale, t } from '$lib/stores/i18n';
 	import { preset } from '$lib/stores/preset';
@@ -8,6 +8,7 @@
 	import { flowerConstants } from '$lib/stores/flowers';
 	import { commands } from '$lib/tauri/commands';
 	import { globalCurrency, CURRENCIES } from '$lib/stores/currency';
+	import GlassDropdown from '$lib/components/common/GlassDropdown.svelte';
 	import type { AppPreset, PricingMode } from '$lib/tauri/types';
 
 	let currentColor = $state('#34d399');
@@ -112,12 +113,22 @@
 	const presetColors = [
 		'#34d399', '#6366f1', '#f43f5e', '#f59e0b',
 		'#06b6d4', '#8b5cf6', '#ec4899', '#14b8a6',
+		// Extended palette
+		'#0ea5e9', '#d97706', '#dc2626', '#7c3aed',
+		// Monochrome — selecting this also activates monochrome palette mode
+		'#1a1a1a',
 	];
 
-	const presets: { id: AppPreset; label: string; emoji: string }[] = [
-		{ id: 'flowers',   label: $t('preset_flowers'),   emoji: '🌸' },
-		{ id: 'ochokochi', label: $t('preset_ochokochi'), emoji: '🏢' },
-		{ id: 'balanced',  label: $t('preset_balanced'),  emoji: '⚖️' },
+	function selectColor(color: string) {
+		seedColor.set(color);
+		// Black/near-black swatch activates monochrome mode; any other colour resets to default
+		paletteMode.set(color === '#1a1a1a' ? 'monochrome' : 'default');
+	}
+
+	const presets: { id: AppPreset; label: string }[] = [
+		{ id: 'flowers',   label: $t('preset_flowers') },
+		{ id: 'ochokochi', label: $t('preset_ochokochi') },
+		{ id: 'balanced',  label: $t('preset_balanced') },
 	];
 </script>
 
@@ -134,7 +145,6 @@
 					class:active={$preset === p.id}
 					onclick={() => $preset !== p.id && (confirmPreset = p.id)}
 				>
-					<span class="preset-emoji">{p.emoji}</span>
 					<span class="preset-label">{p.label}</span>
 					{#if $preset === p.id}
 						<span class="preset-active-dot"></span>
@@ -194,6 +204,27 @@
 				☀️ {$t('label_light_mode')}
 			</button>
 		</div>
+
+		<!-- Palette mode toggle -->
+		<div class="palette-toggle-row">
+			<span class="scale-label">{$t('label_palette_mode') ?? 'Palette'}</span>
+			<div class="mode-toggle-row">
+				<button
+					class="mode-btn"
+					class:mode-active={$paletteMode === 'default'}
+					onclick={() => paletteMode.set('default')}
+				>
+					{$t('label_palette_default') ?? 'Default'}
+				</button>
+				<button
+					class="mode-btn"
+					class:mode-active={$paletteMode === 'monochrome'}
+					onclick={() => paletteMode.set('monochrome')}
+				>
+					{$t('label_palette_monochrome') ?? 'Monochrome'}
+				</button>
+			</div>
+		</div>
 	</section>
 
 	<!-- ── Theme Color ─────────────────────────────────────────── -->
@@ -210,10 +241,12 @@
 			{#each presetColors as color}
 				<button
 					class="color-swatch"
-					style:background={color}
 					class:active={currentColor === color}
-					onclick={() => seedColor.set(color)}
-					aria-label="Цвет {color}"
+					class:swatch-mono={color === '#1a1a1a'}
+					style:background={color}
+					onclick={() => selectColor(color)}
+					aria-label={color === '#1a1a1a' ? 'Монохромный' : `Цвет ${color}`}
+					title={color === '#1a1a1a' ? 'Чёрно-белый' : color}
 				></button>
 			{/each}
 		</div>
@@ -223,20 +256,20 @@
 	<section class="section">
 		<h2>{$t('label_currency')}</h2>
 		<p class="hint">{$t('hint_currency')}</p>
-		<select bind:value={$globalCurrency} class="locale-select currency-select">
-			{#each CURRENCIES as c}
-				<option value={c.code}>{c.symbol} {c.code} — {c.name}</option>
-			{/each}
-		</select>
+		<GlassDropdown
+			items={CURRENCIES.map(c => ({ value: c.code, label: `${c.symbol} ${c.code} — ${c.name}` }))}
+			bind:value={$globalCurrency}
+			placeholder="— Currency —"
+		/>
 	</section>
 
 	<!-- ── Language ───────────────────────────────────────────── -->
 	<section class="section">
 		<h2>{$t('label_language')}</h2>
-		<select bind:value={$locale} class="locale-select">
-			<option value="ru">Русский</option>
-			<option value="en">English</option>
-		</select>
+		<GlassDropdown
+			items={[{ value: 'ru', label: 'Русский' }, { value: 'en', label: 'English' }]}
+			bind:value={$locale}
+		/>
 	</section>
 
 	<!-- ── Sync & Identity ────────────────────────────────────── -->
@@ -383,7 +416,6 @@
 		background: rgba(52, 211, 153, 0.08);
 	}
 
-	.preset-emoji { font-size: 1.6rem; }
 
 	.preset-label {
 		font-size: 0.82rem;
@@ -478,6 +510,13 @@
 		font-weight: 600;
 	}
 
+	.palette-toggle-row {
+		margin-top: 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
 	/* ── Color picker ─────────── */
 	.color-picker-row {
 		display: flex;
@@ -523,21 +562,14 @@
 	.color-swatch.active { border-color: var(--color-on-surface); transform: scale(1.15); }
 	.color-swatch:hover { border-color: var(--color-outline); }
 
-	/* ── Language ─────────────── */
-	.locale-select {
-		background: var(--glass-bg);
-		border: 1px solid var(--glass-border);
-		border-radius: 8px;
-		padding: 8px 14px;
-		color: var(--color-on-surface);
-		font-size: 0.875rem;
-		font-family: inherit;
-		cursor: pointer;
-		outline: none;
-		min-width: 160px;
+	/* Monochrome swatch — visible border so the dark circle reads on dark bg */
+	.swatch-mono {
+		border-color: rgba(255, 255, 255, 0.25);
+		background: linear-gradient(135deg, #2a2a2a 0%, #0a0a0a 100%) !important;
 	}
+	.swatch-mono.active { border-color: var(--color-on-surface); }
 
-	.locale-select:focus { border-color: var(--color-primary); }
+	/* ── Language ─────────────── */
 
 	/* ── Sync identity ────────── */
 	.info-row {

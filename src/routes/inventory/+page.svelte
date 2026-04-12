@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { inventory, categories as categoryStrings } from '$lib/stores/inventory';
 	import { categories } from '$lib/stores/categories';
-	import { flowerSorts } from '$lib/stores/flowers';
+	import { flowerSorts, flowerConstants } from '$lib/stores/flowers';
 	import { preset } from '$lib/stores/preset';
 	import { t } from '$lib/stores/i18n';
 	import { commands } from '$lib/tauri/commands';
@@ -9,6 +9,7 @@
 	import ItemDetailModal from '$lib/components/inventory/ItemDetailModal.svelte';
 	import PackAssignmentModal from '$lib/components/flowers/PackAssignmentModal.svelte';
 	import QuickSellModal from '$lib/components/inventory/QuickSellModal.svelte';
+	import PackModal from '$lib/components/warehouse/PackModal.svelte';
 	import type { CreateItemPayload, Item, Category, FlowerSort } from '$lib/tauri/types';
 
 	let showForm = $state(false);
@@ -17,11 +18,34 @@
 	let selectedItem = $state<Item | null>(null);
 	let packingItem = $state<Item | null>(null);
 	let sellingItem = $state<Item | null>(null);
+	let packOpen = $state(false);
 
-	// Load flower sorts when in flowers preset
+	// Load flower sorts + constants when in flowers preset
 	$effect(() => {
-		if ($preset === 'flowers') flowerSorts.load();
+		if ($preset === 'flowers') {
+			flowerSorts.load();
+			flowerConstants.load();
+		}
 	});
+
+	// ── Warehouse view: filtered flower sorts ─────────────────
+	const warehouseSorts = $derived.by(() => {
+		if ($preset !== 'flowers') return [];
+		let list = $flowerSorts;
+		if (searchQuery) {
+			const q = searchQuery.toLowerCase();
+			list = list.filter(
+				(s) => s.name.toLowerCase().includes(q) || (s.variety ?? '').toLowerCase().includes(q)
+			);
+		}
+		if (filterCategory) {
+			list = list.filter((s) => s.name === filterCategory);
+		}
+		return list;
+	});
+
+	const warehouseTotalPkg = $derived(warehouseSorts.reduce((s, f) => s + f.pkg_stock, 0));
+	const warehouseTotalRaw = $derived(warehouseSorts.reduce((s, f) => s + f.raw_stock, 0));
 
 	// ── Sort manager state ─────────────────────────────────────
 	let newSortName = $state('');
@@ -34,11 +58,13 @@
 
 	async function handleCreateSort() {
 		if (!newSortName.trim()) return;
-		await flowerSorts.create(
-			newSortName.trim(),
-			newSortVariety.trim() || undefined,
-			newSortColor,
-		);
+		await flowerSorts.create({
+			name: newSortName.trim(),
+			variety: newSortVariety.trim() || undefined,
+			color_hex: newSortColor,
+			purchase_price: newSortPurchasePrice || undefined,
+			sell_price_stem: newSortSellPrice || undefined,
+		});
 		newSortName = '';
 		newSortVariety = '';
 		newSortColor = '#f472b6';
@@ -257,17 +283,76 @@
 </script>
 
 <div class="inventory-page">
+
+{#if $preset === 'flowers'}
+	<!-- ══ WAREHOUSE VIEW (flowers preset) ═══════════════════════ -->
+	<div class="warehouse-view">
+
+		<div class="wh-header">
+			<div>
+				<h1 class="wh-title">Склад</h1>
+				<p class="wh-sub">Упакованные букеты</p>
+			</div>
+			<button type="button" class="btn-pack" onclick={() => (packOpen = true)}>
+				<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+				Упаковать
+			</button>
+		</div>
+
+		<!-- KPI strip -->
+		<div class="wh-kpi">
+			<div class="wh-kpi-card">
+				<span class="wh-kpi-val">{warehouseTotalPkg}</span>
+				<span class="wh-kpi-label">Упаковок на складе</span>
+			</div>
+			<div class="wh-kpi-card">
+				<span class="wh-kpi-val">{warehouseTotalRaw}</span>
+				<span class="wh-kpi-label">Стеблей в наличии</span>
+			</div>
+			<div class="wh-kpi-card">
+				<span class="wh-kpi-val">{$flowerSorts.length}</span>
+				<span class="wh-kpi-label">Видов сырья</span>
+			</div>
+		</div>
+
+		<!-- Cards showing pkg_stock -->
+		{#if $flowerSorts.length === 0}
+			<p class="wh-empty">Нет сырья. Добавьте его в <a href="/flowers">Оранжерее</a>.</p>
+		{:else}
+			<div class="wh-grid">
+				{#each warehouseSorts as sort (sort.id)}
+					<div class="wh-card">
+						<div class="wh-card-name">{sort.name}</div>
+						{#if sort.variety}<div class="wh-card-variety">{sort.variety}</div>{/if}
+						<div class="wh-stocks">
+							<div class="wh-stock">
+								<span class="wh-stock-val">{sort.pkg_stock}</span>
+								<span class="wh-stock-unit">уп.</span>
+							</div>
+							<div class="wh-stock muted">
+								<span class="wh-stock-val">{sort.raw_stock}</span>
+								<span class="wh-stock-unit">шт.</span>
+							</div>
+						</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
+	</div>
+
+	{#if packOpen}
+		<PackModal
+			onclose={() => (packOpen = false)}
+			ondone={() => { flowerSorts.load(); }}
+		/>
+	{/if}
+
+{:else}
+	<!-- ══ GENERIC INVENTORY VIEW ════════════════════════════════ -->
 	<div class="header">
 		<h1>{$t('page_inventory_title')}</h1>
 		<div class="header-actions">
-			{#if $preset === 'flowers'}
-				<button
-					class="btn-secondary"
-					onclick={() => { showSortManager = !showSortManager; showCategoryManager = false; showForm = false; }}
-				>
-					🌸 {$t('action_manage_sorts')}
-				</button>
-			{/if}
 			<button
 				class="btn-secondary"
 				onclick={() => { showCategoryManager = !showCategoryManager; showSortManager = false; showForm = false; }}
@@ -332,8 +417,8 @@
 		</div>
 	{/if}
 
-	<!-- ── Sort Manager (flowers preset) ────────────────────────── -->
-	{#if showSortManager && $preset === 'flowers'}
+	<!-- ── Sort Manager (generic preset only — flowers uses greenhouse page) -->
+	{#if showSortManager}
 		<div class="cat-panel">
 			<div class="cat-panel-title">{$t('flowers_manage_sorts')}</div>
 			{#if $flowerSorts.length === 0}
@@ -408,25 +493,6 @@
 					<label for="stock">{$t('label_stock')}</label>
 					<input id="stock" type="number" min="0" bind:value={formData.initial_stock} />
 				</div>
-				{#if $preset === 'flowers' && $flowerSorts.length > 0}
-					<div class="form-field">
-						<label for="flower-sort">{$t('label_flower_sort')}</label>
-						<select id="flower-sort" onchange={(e) => {
-							const id = (e.currentTarget as HTMLSelectElement).value;
-							const sort = $flowerSorts.find((s) => s.id === id);
-							if (sort) {
-								formData.category = sort.name;
-								formData.category_id = sort.id; // critical: link item → sort
-								if (sort.sell_price_stem > 0 && !formData.price) formData.price = sort.sell_price_stem;
-							}
-						}}>
-							<option value="">— {$t('label_flower_sort')} —</option>
-							{#each $flowerSorts as sort}
-								<option value={sort.id}>{sort.name}{sort.variety ? ` — ${sort.variety}` : ''}</option>
-							{/each}
-						</select>
-					</div>
-				{/if}
 			</div>
 
 			<div class="form-field">
@@ -457,96 +523,91 @@
 		</form>
 	{/if}
 
-	<!-- ── Analytics Panel (Task 7) ──────────────────────────── -->
-	<div class="analytics-toggle-row">
-		<button class="analytics-toggle btn-secondary" onclick={() => (analyticsOpen = !analyticsOpen)}>
-			{analyticsOpen ? '▲' : '▼'} Аналитика склада
-		</button>
-	</div>
-	<div class="analytics-panel" class:analytics-open={analyticsOpen}>
-		<div class="analytics-grid">
-			<div class="analytics-kpi">
-				<span class="analytics-val">{analytics.totalItems}</span>
-				<span class="analytics-lbl">Товаров</span>
-			</div>
-			<div class="analytics-kpi">
-				<span class="analytics-val">{analytics.totalStock}</span>
-				<span class="analytics-lbl">На складе</span>
-			</div>
-			<div class="analytics-kpi">
-				<span class="analytics-val">{analytics.totalCost.toFixed(0)}</span>
-				<span class="analytics-lbl">Себест. (∑)</span>
-			</div>
-			<div class="analytics-kpi">
-				<span class="analytics-val">{analytics.totalValue.toFixed(0)}</span>
-				<span class="analytics-lbl">Стоимость (∑)</span>
-			</div>
-			<div class="analytics-kpi">
-				<span class="analytics-val">{analytics.avgMargin}%</span>
-				<span class="analytics-lbl">Ср. маржа</span>
-			</div>
-			<div class="analytics-kpi">
-				<span class="analytics-val">{analytics.totalSold}</span>
-				<span class="analytics-lbl">Продано</span>
+	<!-- ═══════════════════════════════════════════════════════════ -->
+	<!-- GENERIC INVENTORY VIEW (non-flowers presets)               -->
+	<!-- ═══════════════════════════════════════════════════════════ -->
+		<!-- ── Analytics Panel ──────────────────────────────────────── -->
+		<div class="analytics-toggle-row">
+			<button class="analytics-toggle btn-secondary" onclick={() => (analyticsOpen = !analyticsOpen)}>
+				{analyticsOpen ? '▲' : '▼'} Аналитика склада
+			</button>
+		</div>
+		<div class="analytics-panel" class:analytics-open={analyticsOpen}>
+			<div class="analytics-grid">
+				<div class="analytics-kpi">
+					<span class="analytics-val">{analytics.totalItems}</span>
+					<span class="analytics-lbl">Товаров</span>
+				</div>
+				<div class="analytics-kpi">
+					<span class="analytics-val">{analytics.totalStock}</span>
+					<span class="analytics-lbl">На складе</span>
+				</div>
+				<div class="analytics-kpi">
+					<span class="analytics-val">{analytics.totalCost.toFixed(0)}</span>
+					<span class="analytics-lbl">Себест. (∑)</span>
+				</div>
+				<div class="analytics-kpi">
+					<span class="analytics-val">{analytics.totalValue.toFixed(0)}</span>
+					<span class="analytics-lbl">Стоимость (∑)</span>
+				</div>
+				<div class="analytics-kpi">
+					<span class="analytics-val">{analytics.avgMargin}%</span>
+					<span class="analytics-lbl">Ср. маржа</span>
+				</div>
+				<div class="analytics-kpi">
+					<span class="analytics-val">{analytics.totalSold}</span>
+					<span class="analytics-lbl">Продано</span>
+				</div>
 			</div>
 		</div>
-	</div>
 
-	<!-- ── Filters & Sort (Task 6) ──────────────────────────── -->
-	<div class="filters">
-		<input
-			type="text"
-			class="search-input"
-			placeholder={$t('hint_search')}
-			bind:value={searchQuery}
-		/>
-		{#if $preset === 'flowers'}
-			<select class="category-filter" bind:value={filterCategory}>
-				<option value="">— Все сорта —</option>
-				{#each $flowerSorts as sort}
-					<option value={sort.name}>{sort.name}{sort.variety ? ` — ${sort.variety}` : ''}</option>
-				{/each}
-			</select>
-		{:else}
+		<!-- ── Filters & Sort ──────────────────────────────────────── -->
+		<div class="filters">
+			<input
+				type="text"
+				class="search-input"
+				placeholder={$t('hint_search')}
+				bind:value={searchQuery}
+			/>
 			<select class="category-filter" bind:value={filterCategory}>
 				<option value="">{$t('status_all')}</option>
 				{#each $categoryStrings as cat}
 					<option value={cat}>{cat}</option>
 				{/each}
 			</select>
-		{/if}
-		<div class="sort-pills">
-			{#each [
-				{ key: 'name',          label: 'А-Я' },
-				{ key: 'current_price', label: '₽' },
-				{ key: 'sold_count',    label: '#' },
-				{ key: 'current_stock', label: 'Ост.' },
-			] as s}
-				<button
-					class="sort-pill"
-					class:active={sortKey === s.key}
-					onclick={() => setSort(s.key)}
-				>
-					{s.label}{sortKey === s.key ? (sortDir === 'asc' ? '↑' : '↓') : ''}
-				</button>
+			<div class="sort-pills">
+				{#each [
+					{ key: 'name',          label: 'А-Я' },
+					{ key: 'current_price', label: $t('label_price') },
+					{ key: 'sold_count',    label: '#' },
+					{ key: 'current_stock', label: 'Ост.' },
+				] as s}
+					<button
+						class="sort-pill"
+						class:active={sortKey === s.key}
+						onclick={() => setSort(s.key)}
+					>
+						{s.label}{sortKey === s.key ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+					</button>
+				{/each}
+			</div>
+		</div>
+
+		<div class="items-grid">
+			{#each sortedItems as item (item.id)}
+				<LiquidGlassCard
+					{item}
+					appDataDir={appDataDirPath}
+					onclick={() => (selectedItem = item)}
+					onpack={(it) => (packingItem = it)}
+					onsell={(it) => (sellingItem = it)}
+				/>
+			{:else}
+				<div class="empty-state">{$t('empty_no_items')}</div>
 			{/each}
 		</div>
-	</div>
-
-	<div class="items-grid">
-		{#each sortedItems as item (item.id)}
-			<LiquidGlassCard
-				{item}
-				appDataDir={appDataDirPath}
-				onclick={() => (selectedItem = item)}
-				onpack={(it) => (packingItem = it)}
-				onsell={(it) => (sellingItem = it)}
-			/>
-		{:else}
-			<div class="empty-state">{$t('empty_no_items')}</div>
-		{/each}
-	</div>
-</div>
+{/if}<!-- close outer: flowers warehouse vs generic inventory -->
+</div><!-- close inventory-page -->
 
 <!-- Item detail modal -->
 <ItemDetailModal item={selectedItem} onclose={() => (selectedItem = null)} appDataDir={appDataDirPath} />
@@ -953,4 +1014,38 @@
 		color: var(--color-outline);
 		font-size: 0.9rem;
 	}
+
+	/* ── New Warehouse View styles (in .warehouse-view component) ── */
+	.warehouse-view { display: flex; flex-direction: column; gap: 20px; }
+	.wh-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+	.wh-title { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.03em; margin: 0; color: var(--color-on-surface); }
+	.wh-sub { font-size: 0.82rem; color: var(--color-outline); margin: 2px 0 0; }
+	.btn-pack {
+		display: flex; align-items: center; gap: 7px;
+		background: var(--color-primary); color: var(--color-on-primary, #fff);
+		border: none; border-radius: 12px; padding: 10px 18px;
+		font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+	}
+	.btn-pack:hover { opacity: 0.88; }
+	.wh-kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+	.wh-kpi-card {
+		background: var(--glass-bg); border: 1px solid var(--glass-border);
+		border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 3px;
+	}
+	.wh-kpi-val { font-size: 1.7rem; font-weight: 700; color: var(--color-primary); line-height: 1; }
+	.wh-kpi-label { font-size: 0.72rem; color: var(--color-outline); }
+	.wh-empty { font-size: 0.88rem; color: var(--color-outline); margin: 0; }
+	.wh-empty a { color: var(--color-primary); }
+	.wh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+	.wh-card {
+		background: var(--glass-bg); border: 1px solid var(--glass-border);
+		border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
+	}
+	.wh-card-name { font-size: 0.92rem; font-weight: 600; color: var(--color-on-surface); }
+	.wh-card-variety { font-size: 0.75rem; color: var(--color-outline); }
+	.wh-stocks { display: flex; gap: 12px; align-items: baseline; }
+	.wh-stock { display: flex; align-items: baseline; gap: 3px; }
+	.wh-stock.muted .wh-stock-val { font-size: 1rem; color: var(--color-outline); }
+	.wh-stock-val { font-size: 1.5rem; font-weight: 700; color: var(--color-primary); line-height: 1; }
+	.wh-stock-unit { font-size: 0.72rem; color: var(--color-outline); }
 </style>

@@ -7,6 +7,9 @@
 	import { t } from '$lib/stores/i18n';
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
 	import { hlcToDate } from '$lib/utils/time';
+	import HarvestTimeline from '$lib/components/charts/HarvestTimeline.svelte';
+	import PackagingEfficiency from '$lib/components/charts/PackagingEfficiency.svelte';
+	import type { PackagingLogEntry, HarvestLogEntry } from '$lib/tauri/types';
 
 	const TZ = 'Asia/Tbilisi';
 
@@ -14,9 +17,43 @@
 	let dateFrom = $state('');
 	let dateTo = $state('');
 
+	// ── Search & sort ─────────────────────────────────────────
+	let searchQuery = $state('');
+	let catSortKey = $state<'category' | 'count' | 'stock' | 'sold' | 'revenue'>('revenue');
+	let catSortDir = $state<'asc' | 'desc'>('desc');
+	let topSortKey = $state<'name' | 'category' | 'sold_count' | 'revenue'>('sold_count');
+	let topSortDir = $state<'asc' | 'desc'>('desc');
+
+	function toggleCatSort(key: typeof catSortKey) {
+		if (catSortKey === key) catSortDir = catSortDir === 'asc' ? 'desc' : 'asc';
+		else { catSortKey = key; catSortDir = 'desc'; }
+	}
+
+	function toggleTopSort(key: typeof topSortKey) {
+		if (topSortKey === key) topSortDir = topSortDir === 'asc' ? 'desc' : 'asc';
+		else { topSortKey = key; topSortDir = 'desc'; }
+	}
+
+	// ── Tabs ─────────────────────────────────────────────────
+	type AnalyticsTab = 'orders' | 'greenhouse' | 'warehouse' | 'summary';
+	let activeTab = $state<AnalyticsTab>($preset === 'flowers' ? 'summary' : 'orders');
+
+	// ── Assembly dynamics (flowers) ───────────────────────────
+	let packagingLog = $state<PackagingLogEntry[]>([]);
+	let harvestLog = $state<HarvestLogEntry[]>([]);
+	let harvestLoading = $state(false);
+
 	$effect(() => {
 		orders.load();
-		if ($preset === 'flowers') flowerSorts.load();
+		if ($preset === 'flowers') {
+			flowerSorts.load();
+			commands.getPackagingLog(200).then((log) => (packagingLog = log)).catch(() => {});
+			harvestLoading = true;
+			commands.getHarvestLog(undefined, 500)
+				.then((log) => { harvestLog = log; })
+				.catch(() => {})
+				.finally(() => { harvestLoading = false; });
+		}
 	});
 
 	function fmt(value: number): string {
@@ -57,8 +94,10 @@
 		totalSold: $inventory.reduce((s, i) => s + i.sold_count, 0),
 	});
 
-	let categoryStats = $derived(
-		Object.entries(
+	const sq = $derived(searchQuery.toLowerCase().trim());
+
+	let categoryStats = $derived.by(() => {
+		const entries = Object.entries(
 			$inventory.reduce(
 				(acc, item) => {
 					if (!acc[item.category]) {
@@ -72,12 +111,26 @@
 				},
 				{} as Record<string, { count: number; stock: number; revenue: number; sold: number }>
 			)
-		).sort((a, b) => b[1].revenue - a[1].revenue)
-	);
+		);
+		const filtered = sq ? entries.filter(([cat]) => cat.toLowerCase().includes(sq)) : entries;
+		return filtered.sort((a, b) => {
+			const va = catSortKey === 'category' ? a[0] : a[1][catSortKey];
+			const vb = catSortKey === 'category' ? b[0] : b[1][catSortKey];
+			const cmp = typeof va === 'string' ? va.localeCompare(vb as string) : (va as number) - (vb as number);
+			return catSortDir === 'asc' ? cmp : -cmp;
+		});
+	});
 
-	let topSellers = $derived(
-		[...$inventory].sort((a, b) => b.sold_count - a.sold_count).slice(0, 10)
-	);
+	let topSellers = $derived.by(() => {
+		let items = [...$inventory].sort((a, b) => b.sold_count - a.sold_count).slice(0, 20);
+		if (sq) items = items.filter(i => i.name.toLowerCase().includes(sq) || i.category.toLowerCase().includes(sq));
+		return items.sort((a, b) => {
+			const va = a[topSortKey];
+			const vb = b[topSortKey];
+			const cmp = typeof va === 'string' ? va.localeCompare(vb as string) : (va as number) - (vb as number);
+			return topSortDir === 'asc' ? cmp : -cmp;
+		});
+	});
 
 	// Supply run-rate: weeks of stock remaining based on last 8 weeks of sales pace
 	let runRate = $derived(
@@ -441,6 +494,16 @@
 <div class="analytics-page">
 	<h1>{$t('page_analytics_title')}</h1>
 
+	<!-- ── Tab navigation (flowers preset) ─────────────────── -->
+	{#if $preset === 'flowers'}
+		<div class="tab-nav">
+			<button type="button" class="tab-btn" class:active={activeTab === 'summary'}    onclick={() => (activeTab = 'summary')}>Сводка</button>
+			<button type="button" class="tab-btn" class:active={activeTab === 'orders'}     onclick={() => (activeTab = 'orders')}>Заказы</button>
+			<button type="button" class="tab-btn" class:active={activeTab === 'greenhouse'} onclick={() => (activeTab = 'greenhouse')}>Оранжерея</button>
+			<button type="button" class="tab-btn" class:active={activeTab === 'warehouse'}  onclick={() => (activeTab = 'warehouse')}>Склад</button>
+		</div>
+	{/if}
+
 	<!-- ── Date range filter ─────────────────────────────────── -->
 	<div class="date-filter">
 		<span class="date-filter-label">Период:</span>
@@ -552,14 +615,19 @@
 	</section>
 	{/if}
 
+	<!-- Search -->
+	<div class="search-row">
+		<input class="search-input" type="text" bind:value={searchQuery} placeholder={$t('analytics_search_placeholder')} />
+	</div>
+
 	<!-- Charts row -->
 	<div class="charts-row">
 		<div class="chart-card">
-			<h2>Sales Velocity — Last 30 Days</h2>
+			<h2>{$t('analytics_sales_velocity')}</h2>
 			<canvas bind:this={salesCanvas} class="chart-canvas" style="width:100%;height:200px;"></canvas>
 		</div>
 		<div class="chart-card">
-			<h2>Revenue by Category</h2>
+			<h2>{$t('analytics_revenue_by_category')}</h2>
 			<canvas bind:this={revenueCanvas} class="chart-canvas" style="width:100%;height:200px;"></canvas>
 		</div>
 	</div>
@@ -571,11 +639,11 @@
 				<table>
 					<thead>
 						<tr>
-							<th>{$t('table_header_category')}</th>
-							<th>{$t('table_header_item')}</th>
-							<th>{$t('table_header_stock')}</th>
-							<th>{$t('table_header_sold')}</th>
-							<th>{$t('table_header_revenue')}</th>
+							<th class="sortable" onclick={() => toggleCatSort('category')}>{$t('table_header_category')} {catSortKey === 'category' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+							<th class="sortable" onclick={() => toggleCatSort('count')}>{$t('table_header_item')} {catSortKey === 'count' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+							<th class="sortable" onclick={() => toggleCatSort('stock')}>{$t('table_header_stock')} {catSortKey === 'stock' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+							<th class="sortable" onclick={() => toggleCatSort('sold')}>{$t('table_header_sold')} {catSortKey === 'sold' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+							<th class="sortable" onclick={() => toggleCatSort('revenue')}>{$t('table_header_revenue')} {catSortKey === 'revenue' ? (catSortDir === 'asc' ? '↑' : '↓') : ''}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -596,15 +664,15 @@
 
 	{#if topSellers.length > 0}
 		<section class="section">
-			<h2>Top Sellers</h2>
+			<h2>{$t('analytics_top_sellers')}</h2>
 			<div class="table-wrapper">
 				<table>
 					<thead>
 						<tr>
-							<th>{$t('table_header_item')}</th>
-							<th>{$t('table_header_category')}</th>
-							<th>{$t('table_header_sold')}</th>
-							<th>{$t('table_header_revenue')}</th>
+							<th class="sortable" onclick={() => toggleTopSort('name')}>{$t('table_header_item')} {topSortKey === 'name' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+							<th class="sortable" onclick={() => toggleTopSort('category')}>{$t('table_header_category')} {topSortKey === 'category' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+							<th class="sortable" onclick={() => toggleTopSort('sold_count')}>{$t('table_header_sold')} {topSortKey === 'sold_count' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
+							<th class="sortable" onclick={() => toggleTopSort('revenue')}>{$t('table_header_revenue')} {topSortKey === 'revenue' ? (topSortDir === 'asc' ? '↑' : '↓') : ''}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -625,14 +693,14 @@
 	<!-- Supply Run-Rate Table -->
 	{#if runRate.length > 0}
 		<section class="section">
-			<h2>Supply Run-Rate</h2>
+			<h2>{$t('analytics_run_rate')}</h2>
 			<div class="table-wrapper">
 				<table>
 					<thead>
 						<tr>
 							<th>{$t('table_header_item')}</th>
 							<th>{$t('table_header_stock')}</th>
-							<th>Weeks Remaining</th>
+							<th>{$t('analytics_weeks_remaining')}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -657,6 +725,249 @@
 			</div>
 		</section>
 	{/if}
+
+	<!-- Assembly Dynamics (flowers preset) -->
+	{#if $preset === 'flowers' && packagingLog.length > 0}
+		<section class="section">
+			<h2>{$t('analytics_assembly_dynamics')}</h2>
+			<div class="table-wrapper">
+				<table>
+					<thead>
+						<tr>
+							<th>{$t('table_header_item')}</th>
+							<th>Packs</th>
+							<th>Stems</th>
+							<th>Date</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each packagingLog as entry (entry.id)}
+							<tr>
+								<td>{entry.sort_name}</td>
+								<td>{entry.pack_count}</td>
+								<td>{entry.stems_used}</td>
+								<td>{new Date(entry.created_at).toLocaleDateString()}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+
+	<!-- ══ GREENHOUSE TAB ════════════════════════════════════════ -->
+	{#if $preset === 'flowers' && activeTab === 'greenhouse'}
+		<div class="tab-section">
+			<h2 class="tab-section-title">Оранжерея — сбор урожая</h2>
+
+			<!-- Summary KPIs -->
+			<div class="gh-kpi-row">
+				<div class="gh-kpi">
+					<span class="gh-kpi-val">{$flowerSorts.reduce((s,x) => s + x.raw_stock, 0)}</span>
+					<span class="gh-kpi-label">Стеблей сейчас</span>
+				</div>
+				<div class="gh-kpi">
+					<span class="gh-kpi-val">{$flowerSorts.reduce((s,x) => s + (x.total_harvested ?? 0), 0)}</span>
+					<span class="gh-kpi-label">Всего собрано</span>
+				</div>
+				<div class="gh-kpi">
+					<span class="gh-kpi-val">{$flowerSorts.length}</span>
+					<span class="gh-kpi-label">Видов сырья</span>
+				</div>
+			</div>
+
+			<!-- Harvest timeline chart -->
+			<div class="chart-card">
+				<div class="chart-header">
+					<span class="chart-title">Сбор за 30 дней</span>
+					<span class="chart-sub">{harvestLog.length} записей</span>
+				</div>
+				{#if harvestLoading}
+					<p class="loading-msg">Загрузка…</p>
+				{:else}
+					<HarvestTimeline entries={harvestLog} days={30} />
+				{/if}
+			</div>
+
+			<!-- Per-sort breakdown table -->
+			<div class="sort-breakdown">
+				<h3 class="section-sub">По сортам</h3>
+				{#if $flowerSorts.length === 0}
+					<p class="empty-hint">Нет сырья в оранжерее</p>
+				{:else}
+					<div class="sort-table-wrap">
+						<table class="sort-table">
+							<thead>
+								<tr>
+									<th>Название</th>
+									<th>Сорт</th>
+									<th>Сейчас (шт.)</th>
+									<th>Упаковано (уп.)</th>
+									<th>Всего собрано</th>
+									<th>Цена/шт.</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each [...$flowerSorts].sort((a,b) => b.total_harvested - a.total_harvested) as sort (sort.id)}
+									<tr>
+										<td class="sort-name-cell">{sort.name}</td>
+										<td class="muted">{sort.variety ?? '—'}</td>
+										<td class="num">{sort.raw_stock}</td>
+										<td class="num">{sort.pkg_stock}</td>
+										<td class="num primary">{sort.total_harvested}</td>
+										<td class="num">{sort.sell_price_stem > 0 ? sort.sell_price_stem : '—'}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	<!-- ══ WAREHOUSE TAB ═════════════════════════════════════════ -->
+	{#if $preset === 'flowers' && activeTab === 'warehouse'}
+		<div class="tab-section">
+			<h2 class="tab-section-title">Склад — эффективность упаковки</h2>
+
+			<!-- Packaging KPIs -->
+			<div class="gh-kpi-row">
+				<div class="gh-kpi">
+					<span class="gh-kpi-val">{packagingLog.reduce((s,e) => s + e.pack_count, 0)}</span>
+					<span class="gh-kpi-label">Всего упаковок</span>
+				</div>
+				<div class="gh-kpi">
+					<span class="gh-kpi-val">{packagingLog.reduce((s,e) => s + e.stems_used, 0)}</span>
+					<span class="gh-kpi-label">Стеблей использовано</span>
+				</div>
+				<div class="gh-kpi">
+					<span class="gh-kpi-val">{packagingLog.length > 0
+						? Math.round(packagingLog.reduce((s,e) => s + e.stems_used, 0) / packagingLog.reduce((s,e) => s + e.pack_count, 1))
+						: 0}</span>
+					<span class="gh-kpi-label">Ср. стеблей/упак.</span>
+				</div>
+			</div>
+
+			<!-- Packaging efficiency chart -->
+			<div class="chart-card">
+				<div class="chart-header">
+					<span class="chart-title">Упаковка по неделям (последние 8 нед.)</span>
+				</div>
+				<PackagingEfficiency log={packagingLog} weeks={8} />
+			</div>
+
+			<!-- Packaging log table -->
+			{#if packagingLog.length > 0}
+				<div class="sort-breakdown">
+					<h3 class="section-sub">Журнал упаковки</h3>
+					<div class="sort-table-wrap">
+						<table class="sort-table">
+							<thead>
+								<tr><th>Сорт</th><th>Упаковок</th><th>Стеблей</th><th>Дата</th></tr>
+							</thead>
+							<tbody>
+								{#each packagingLog.slice(0, 50) as e (e.id)}
+									<tr>
+										<td class="sort-name-cell">{e.sort_name}</td>
+										<td class="num">{e.pack_count}</td>
+										<td class="num">{e.stems_used}</td>
+										<td class="muted">{new Date(e.created_at).toLocaleDateString('ru')}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- ══ SUMMARY TAB ═══════════════════════════════════════════ -->
+	{#if $preset === 'flowers' && activeTab === 'summary'}
+		<div class="tab-section">
+			<h2 class="tab-section-title">Сводка по всем модулям</h2>
+
+			<div class="summary-grid">
+				<!-- Greenhouse block -->
+				<div class="summary-block">
+					<div class="summary-block-header">
+						<span class="summary-icon">
+							<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round">
+								<path d="M12 12 C10.5 10 10.5 7.5 12 7 C13.5 7.5 13.5 10 12 12"/>
+								<path d="M12 12 C10.5 10 10.5 7.5 12 7 C13.5 7.5 13.5 10 12 12" transform="rotate(72 12 12)"/>
+								<path d="M12 12 C10.5 10 10.5 7.5 12 7 C13.5 7.5 13.5 10 12 12" transform="rotate(144 12 12)"/>
+								<circle cx="12" cy="12" r="2"/>
+							</svg>
+						</span>
+						<h3 class="summary-block-title">Оранжерея</h3>
+					</div>
+					<div class="summary-metrics">
+						<div class="summary-metric">
+							<span class="summary-metric-val">{$flowerSorts.reduce((s,x)=>s+x.raw_stock,0)}</span>
+							<span class="summary-metric-label">стеблей сейчас</span>
+						</div>
+						<div class="summary-metric">
+							<span class="summary-metric-val">{$flowerSorts.reduce((s,x)=>s+(x.total_harvested??0),0)}</span>
+							<span class="summary-metric-label">всего собрано</span>
+						</div>
+					</div>
+					<div class="summary-mini-chart">
+						<HarvestTimeline entries={harvestLog} days={14} />
+					</div>
+				</div>
+
+				<!-- Warehouse block -->
+				<div class="summary-block">
+					<div class="summary-block-header">
+						<span class="summary-icon">
+							<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+						</span>
+						<h3 class="summary-block-title">Склад</h3>
+					</div>
+					<div class="summary-metrics">
+						<div class="summary-metric">
+							<span class="summary-metric-val">{$flowerSorts.reduce((s,x)=>s+x.pkg_stock,0)}</span>
+							<span class="summary-metric-label">упак. готово</span>
+						</div>
+						<div class="summary-metric">
+							<span class="summary-metric-val">{packagingLog.reduce((s,e)=>s+e.pack_count,0)}</span>
+							<span class="summary-metric-label">всего упаковано</span>
+						</div>
+					</div>
+					<div class="summary-mini-chart">
+						<PackagingEfficiency log={packagingLog} weeks={6} />
+					</div>
+				</div>
+
+				<!-- Orders block -->
+				<div class="summary-block">
+					<div class="summary-block-header">
+						<span class="summary-icon">
+							<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+						</span>
+						<h3 class="summary-block-title">Заказы</h3>
+					</div>
+					<div class="summary-metrics">
+						<div class="summary-metric">
+							<span class="summary-metric-val">{orderStats.total}</span>
+							<span class="summary-metric-label">всего заказов</span>
+						</div>
+						<div class="summary-metric primary">
+							<span class="summary-metric-val">{fmt(orderStats.totalAmount)}</span>
+							<span class="summary-metric-label">общая сумма</span>
+						</div>
+					</div>
+					<div class="summary-status-row">
+						<span class="status-pill pending">{orderStats.pending} ожидает</span>
+						<span class="status-pill progress">{orderStats.inProgress} в работе</span>
+						<span class="status-pill done">{orderStats.completed} готово</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+
 </div>
 
 <style>
@@ -675,6 +986,110 @@
 		color: var(--color-on-surface);
 		margin: 0 0 12px;
 	}
+
+	/* ── Tab navigation ── */
+	.tab-nav {
+		display: flex;
+		gap: 4px;
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		border-radius: 14px;
+		padding: 4px;
+		margin-bottom: 24px;
+		width: fit-content;
+	}
+
+	.tab-btn {
+		background: none; border: none;
+		border-radius: 10px;
+		padding: 7px 16px;
+		font-size: 0.85rem;
+		color: var(--color-outline);
+		cursor: pointer;
+		transition: background 0.12s, color 0.12s;
+		white-space: nowrap;
+	}
+	.tab-btn:hover { color: var(--color-on-surface); }
+	.tab-btn.active {
+		background: var(--color-primary);
+		color: var(--color-on-primary, #fff);
+		font-weight: 600;
+	}
+
+	/* ── Tab sections ── */
+	.tab-section { display: flex; flex-direction: column; gap: 20px; }
+	.tab-section-title { font-size: 1.1rem; font-weight: 700; margin: 0; letter-spacing: -0.02em; color: var(--color-on-surface); }
+	.section-sub { font-size: 0.82rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-outline); margin: 0; }
+	.loading-msg { font-size: 0.85rem; color: var(--color-outline); margin: 0; padding: 24px 0; text-align: center; }
+	.empty-hint { font-size: 0.85rem; color: var(--color-outline); margin: 0; }
+
+	/* ── Greenhouse KPIs ── */
+	.gh-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+	.gh-kpi {
+		background: var(--glass-bg); border: 1px solid var(--glass-border);
+		border-radius: 14px; padding: 14px 16px;
+		display: flex; flex-direction: column; gap: 3px;
+	}
+	.gh-kpi-val { font-size: 1.7rem; font-weight: 700; color: var(--color-primary); line-height: 1; }
+	.gh-kpi-label { font-size: 0.72rem; color: var(--color-outline); }
+
+	/* ── Chart cards ── */
+	.chart-card {
+		background: var(--glass-bg); border: 1px solid var(--glass-border);
+		border-radius: 14px; padding: 16px;
+	}
+	.chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+	.chart-title { font-size: 0.88rem; font-weight: 600; color: var(--color-on-surface); }
+	.chart-sub { font-size: 0.75rem; color: var(--color-outline); }
+
+	/* ── Sort table ── */
+	.sort-breakdown { display: flex; flex-direction: column; gap: 10px; }
+	.sort-table-wrap { overflow-x: auto; }
+	.sort-table {
+		width: 100%; border-collapse: collapse;
+		font-size: 0.85rem;
+	}
+	.sort-table th {
+		text-align: left; padding: 8px 12px;
+		font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+		color: var(--color-outline); border-bottom: 1px solid var(--glass-border);
+	}
+	.sort-table td {
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--glass-border);
+		color: var(--color-on-surface);
+	}
+	.sort-table tr:last-child td { border-bottom: none; }
+	.sort-table tr:hover td { background: var(--glass-bg-hover); }
+	.sort-name-cell { font-weight: 600; }
+	.num { text-align: right; font-variant-numeric: tabular-nums; }
+	.num.primary { color: var(--color-primary); font-weight: 600; }
+	.muted { color: var(--color-outline); }
+
+	/* ── Summary grid ── */
+	.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+	.summary-block {
+		background: var(--glass-bg); border: 1px solid var(--glass-border);
+		border-radius: 16px; padding: 16px;
+		display: flex; flex-direction: column; gap: 12px;
+	}
+	.summary-block-header { display: flex; align-items: center; gap: 8px; }
+	.summary-icon { color: var(--color-primary); display: flex; }
+	.summary-block-title { font-size: 0.9rem; font-weight: 700; margin: 0; color: var(--color-on-surface); }
+	.summary-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+	.summary-metric { display: flex; flex-direction: column; gap: 2px; }
+	.summary-metric.primary .summary-metric-val { color: var(--color-primary); }
+	.summary-metric-val { font-size: 1.3rem; font-weight: 700; color: var(--color-on-surface); line-height: 1; }
+	.summary-metric-label { font-size: 0.68rem; color: var(--color-outline); }
+	.summary-mini-chart { height: 80px; }
+	.summary-status-row { display: flex; gap: 6px; flex-wrap: wrap; }
+	.status-pill {
+		font-size: 0.7rem; padding: 3px 8px;
+		border-radius: 20px; font-weight: 500;
+	}
+	.status-pill.pending { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+	.status-pill.progress { background: rgba(59,130,246,0.12); color: #3b82f6; border: 1px solid rgba(59,130,246,0.3); }
+	.status-pill.done { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
 
 	.overview-grid {
 		display: grid;
@@ -818,6 +1233,76 @@
 	.amount-lbl { color: var(--color-on-surface); opacity: 0.6; }
 	.amount-val { font-weight: 600; color: var(--color-on-surface); }
 	.color-primary { color: var(--color-primary); }
+
+	/* ── Date filter ── */
+	.date-filter {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 20px;
+		flex-wrap: wrap;
+	}
+
+	.date-filter-label {
+		font-size: 0.85rem;
+		color: var(--color-outline);
+	}
+
+	.date-input {
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		border-radius: 8px;
+		padding: 6px 10px;
+		color: var(--color-on-surface);
+		font-size: 0.85rem;
+		font-family: inherit;
+		outline: none;
+	}
+
+	.date-input:focus { border-color: var(--color-primary); }
+
+	.btn-ghost-sm {
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		border-radius: 8px;
+		padding: 5px 10px;
+		color: var(--color-on-surface);
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.btn-ghost-sm:hover { background: var(--glass-bg-hover); }
+
+	/* ── Search ── */
+	.search-row {
+		margin-bottom: 20px;
+	}
+
+	.search-input {
+		width: 100%;
+		max-width: 400px;
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		border-radius: 9px;
+		padding: 9px 14px;
+		color: var(--color-on-surface);
+		font-size: 0.875rem;
+		font-family: inherit;
+		outline: none;
+		transition: border-color 0.15s;
+	}
+
+	.search-input:focus { border-color: var(--color-primary); }
+
+	/* ── Sortable headers ── */
+	.sortable {
+		cursor: pointer;
+		user-select: none;
+		transition: color 0.15s;
+	}
+
+	.sortable:hover { color: var(--color-primary); opacity: 1; }
 
 	@media (max-width: 640px) {
 		.charts-row { grid-template-columns: 1fr; }

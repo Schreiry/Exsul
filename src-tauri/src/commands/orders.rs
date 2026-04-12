@@ -5,6 +5,15 @@ use serde_json::json;
 use tauri::State;
 
 #[tauri::command]
+pub fn get_order_items(
+    db: State<'_, Database>,
+    order_id: String,
+) -> Result<Vec<OrderItem>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::get_order_items(&conn, &order_id)
+}
+
+#[tauri::command]
 pub fn create_order(
     db: State<'_, Database>,
     payload: CreateOrderPayload,
@@ -94,4 +103,55 @@ pub fn add_order_item(
     }
 
     Ok(id)
+}
+
+/// Update extended flower-mode fields on an order.
+#[tauri::command]
+pub fn update_order_extended(
+    db: State<'_, Database>,
+    order_id: String,
+    customer_company: Option<String>,
+    delivery_address: Option<String>,
+    delivery_notes: Option<String>,
+    pack_count_ordered: Option<i32>,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::update_order_extended(
+        &conn,
+        &order_id,
+        customer_company.as_deref(),
+        delivery_address.as_deref(),
+        delivery_notes.as_deref(),
+        pack_count_ordered,
+    )
+}
+
+/// Mark a deadline as confirmed (user acknowledged overdue status).
+#[tauri::command]
+pub fn confirm_order_deadline(
+    db: State<'_, Database>,
+    order_id: String,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::confirm_order_deadline(&conn, &order_id)
+}
+
+/// Get orders whose deadline has passed and have not been confirmed yet.
+/// Used on startup to show the overdue notification modal.
+#[tauri::command]
+pub fn get_overdue_unconfirmed_orders(
+    db: State<'_, Database>,
+) -> Result<Vec<Order>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::get_overdue_unconfirmed_orders(&conn)
+}
+
+/// Calculate pack shortages across all active orders.
+/// Returns only orders where ordered_packs > available pkg_stock.
+#[tauri::command]
+pub fn check_order_shortages(
+    db: State<'_, Database>,
+) -> Result<Vec<OrderShortage>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::check_order_shortages(&conn)
 }

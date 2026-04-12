@@ -3,6 +3,7 @@
 	import { orders } from '$lib/stores/orders';
 	import { commands } from '$lib/tauri/commands';
 	import { inventory } from '$lib/stores/inventory';
+	import GlassDropdown from '$lib/components/common/GlassDropdown.svelte';
 	import type { Item, FlowerSort } from '$lib/tauri/types';
 
 	interface Props {
@@ -150,12 +151,11 @@
 				<!-- Order link -->
 				<div class="field-group">
 					<label class="field-label" for="pa-order">Привязать к заказу (необязательно)</label>
-					<select id="pa-order" class="field-select" bind:value={selectedOrderId}>
-						<option value="">— Без заказа —</option>
-						{#each activeOrders as order}
-							<option value={order.id}>{order.customer_name} — #{order.id.slice(0, 8)}</option>
-						{/each}
-					</select>
+					<GlassDropdown
+						items={[{ value: '', label: '— Без заказа —' }, ...activeOrders.map(o => ({ value: o.id, label: `${o.customer_name} — #${o.id.slice(0, 8)}` }))]}
+						bind:value={selectedOrderId}
+						placeholder="— Без заказа —"
+					/>
 				</div>
 
 				<!-- Note -->
@@ -368,7 +368,6 @@
 
 	.count-input:focus { border-color: var(--color-primary); }
 
-	.field-select,
 	.field-input {
 		background: var(--glass-bg);
 		border: 1px solid var(--glass-border);
@@ -381,7 +380,6 @@
 		transition: border-color 0.15s;
 	}
 
-	.field-select:focus,
 	.field-input:focus { border-color: var(--color-primary); }
 
 	.warn-box {

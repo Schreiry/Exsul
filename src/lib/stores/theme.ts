@@ -1,7 +1,21 @@
 import { writable } from 'svelte/store';
 
-// Default seed color — a teal/emerald tone
-export const seedColor = writable<string>('#34d399');
+// Default seed color — neutral grey (no color bias on first launch)
+const DEFAULT_SEED = '#6b7280';
+
+function getInitialSeed(): string {
+	if (typeof localStorage === 'undefined') return DEFAULT_SEED;
+	const stored = localStorage.getItem('seed-color');
+	return stored ?? DEFAULT_SEED;
+}
+
+export const seedColor = writable<string>(getInitialSeed());
+
+seedColor.subscribe((color) => {
+	if (typeof localStorage !== 'undefined') {
+		localStorage.setItem('seed-color', color);
+	}
+});
 
 // ── UI Scale (0.8 – 1.4, default 1.0) ────────────────────────────────────────
 function getInitialScale(): number {
@@ -35,5 +49,23 @@ export const colorMode = writable<'dark' | 'light'>(getInitialMode());
 colorMode.subscribe((mode) => {
 	if (typeof localStorage !== 'undefined') {
 		localStorage.setItem('color-mode', mode);
+	}
+});
+
+// ── Palette mode (default / monochrome) ──────────────────────────────────────
+export type PaletteMode = 'default' | 'monochrome';
+
+function getInitialPalette(): PaletteMode {
+	if (typeof localStorage === 'undefined') return 'default';
+	const stored = localStorage.getItem('palette-mode');
+	if (stored === 'monochrome') return 'monochrome';
+	return 'default';
+}
+
+export const paletteMode = writable<PaletteMode>(getInitialPalette());
+
+paletteMode.subscribe((mode) => {
+	if (typeof localStorage !== 'undefined') {
+		localStorage.setItem('palette-mode', mode);
 	}
 });

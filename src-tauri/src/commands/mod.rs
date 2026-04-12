@@ -1,8 +1,10 @@
+pub mod app_settings;
 pub mod audit;
 pub mod backup;
 pub mod categories;
 pub mod events;
 pub mod flowers;
+pub mod greenhouse;
 pub mod inventory;
 pub mod orders;
 pub mod preset;

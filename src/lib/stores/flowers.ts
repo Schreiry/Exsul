@@ -1,6 +1,13 @@
 import { writable, derived, get } from 'svelte/store';
 import { commands } from '$lib/tauri/commands';
-import type { FlowerSort, FlowerConstants, PackageResult, UpdateFlowerSortPayload } from '$lib/tauri/types';
+import type {
+	FlowerSort,
+	FlowerConstants,
+	HarvestLogEntry,
+	PackageResult,
+	UpdateFlowerSortPayload,
+	CreateFlowerSortPayload,
+} from '$lib/tauri/types';
 
 // ── Flower sorts ──────────────────────────────────────────────
 
@@ -17,8 +24,8 @@ function createFlowerSortsStore() {
 				console.error('Failed to load flower sorts', e);
 			}
 		},
-		async create(name: string, variety?: string, colorHex?: string) {
-			const id = await commands.createFlowerSort({ name, variety, color_hex: colorHex });
+		async create(payload: CreateFlowerSortPayload): Promise<string> {
+			const id = await commands.createFlowerSort(payload);
 			await this.load();
 			return id;
 		},
@@ -34,6 +41,12 @@ function createFlowerSortsStore() {
 								color_hex: payload.color_hex ?? s.color_hex,
 								raw_stock: payload.raw_stock ?? s.raw_stock,
 								pkg_stock: payload.pkg_stock ?? s.pkg_stock,
+								purchase_price: payload.purchase_price ?? s.purchase_price,
+								sell_price_stem: payload.sell_price_stem ?? s.sell_price_stem,
+								flowers_per_pack_override:
+									payload.flowers_per_pack_override ?? s.flowers_per_pack_override,
+								description: payload.description ?? s.description,
+								photo_path: payload.photo_path ?? s.photo_path,
 							}
 						: s
 				)
@@ -49,7 +62,6 @@ function createFlowerSortsStore() {
 		},
 		async packageFlowers(sortId: string, packCount: number): Promise<PackageResult> {
 			const result = await commands.packageFlowers(sortId, packCount);
-			// Optimistically update the store with new stock values
 			update((sorts) =>
 				sorts.map((s) =>
 					s.id === sortId
@@ -58,6 +70,27 @@ function createFlowerSortsStore() {
 				)
 			);
 			return result;
+		},
+		// ── Greenhouse-specific ──
+		async logHarvest(
+			sortId: string,
+			delta: number,
+			reason: 'manual' | 'correction',
+			note?: string
+		): Promise<void> {
+			await commands.logGreenhouseHarvest(sortId, delta, reason, note);
+			// Reload to get updated raw_stock + total_harvested from DB
+			await this.load();
+		},
+		async getHarvestLog(sortId?: string, limit?: number): Promise<HarvestLogEntry[]> {
+			return commands.getHarvestLog(sortId, limit);
+		},
+		async savePhoto(sortId: string, sourcePath: string): Promise<string> {
+			const path = await commands.saveFlowerPhoto(sortId, sourcePath);
+			update((sorts) =>
+				sorts.map((s) => (s.id === sortId ? { ...s, photo_path: path } : s))
+			);
+			return path;
 		},
 	};
 }

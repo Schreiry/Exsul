@@ -1,7 +1,7 @@
 use crate::db::Database;
 use crate::events::types::{
     CreatePackAssignmentPayload, FlowerConstants, FlowerSort, CreateFlowerSortPayload,
-    PackAssignment, PackageResult, UpdateFlowerSortPayload,
+    PackAssignment, PackageResult, PackagingLogEntry, UpdateFlowerSortPayload,
 };
 use tauri::State;
 use uuid::Uuid;
@@ -117,6 +117,17 @@ pub fn package_flowers(
 
     let log_id = Uuid::new_v4().to_string();
     crate::db::queries::package_flowers(&conn, &log_id, &sort_id, pack_count, flowers_per_pack)
+}
+
+// ── Packaging Log ────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_packaging_log(
+    db: State<'_, Database>,
+    limit: Option<i64>,
+) -> Result<Vec<PackagingLogEntry>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::get_packaging_log(&conn, limit)
 }
 
 // ── Pack Assignments (Task 9) ─────────────────────────────────

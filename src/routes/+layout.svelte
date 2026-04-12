@@ -4,7 +4,7 @@
 	import SyncIndicator from '$lib/components/sync/SyncIndicator.svelte';
 	import type { DockItemConfig } from '$lib/components/dock/types';
 	import { applyTheme } from '$lib/theme/apply';
-	import { seedColor, colorMode } from '$lib/stores/theme';
+	import { seedColor, colorMode, paletteMode } from '$lib/stores/theme';
 	import { inventory } from '$lib/stores/inventory';
 	import { categories } from '$lib/stores/categories';
 	import { preset } from '$lib/stores/preset';
@@ -18,31 +18,51 @@
 	import IconAudit from '$lib/components/icons/IconAudit.svelte';
 	import IconSettings from '$lib/components/icons/IconSettings.svelte';
 	import IconSync from '$lib/components/icons/IconSync.svelte';
+	import IconGreenhouse from '$lib/components/icons/IconGreenhouse.svelte';
+	import IconWarehouse from '$lib/components/icons/IconWarehouse.svelte';
 	import '../app.css';
 
 	let { children } = $props();
 
 	let syncOpen = $state(false);
 
-	const dockItems = $derived<DockItemConfig[]>([
-		{ id: 'dashboard',  icon: IconDashboard,  label: $t('nav_dashboard'),  href: '/' },
-		{ id: 'inventory',  icon: IconInventory,  label: $t('nav_inventory'),  href: '/inventory' },
-		{ id: 'analytics',  icon: IconAnalytics,  label: $t('nav_analytics'),  href: '/analytics' },
-		{ id: 'orders',     icon: IconOrders,     label: $t('nav_orders'),     href: '/orders' },
-		{ id: 'audit',      icon: IconAudit,      label: $t('nav_audit'),      href: '/audit' },
-		{ id: 'settings',   icon: IconSettings,   label: $t('nav_settings'),   href: '/settings' },
-		{ id: 'sync',       icon: IconSync,       label: $t('nav_sync'),       onclick: () => (syncOpen = true) },
-	]);
+	const dockItems = $derived<DockItemConfig[]>(
+		$preset === 'flowers'
+			? [
+				{ id: 'dashboard',   icon: IconDashboard,   label: $t('nav_dashboard'),   href: '/' },
+				{ id: 'greenhouse',  icon: IconGreenhouse,  label: $t('nav_greenhouse'),  href: '/flowers' },
+				{ id: 'warehouse',   icon: IconWarehouse,   label: $t('nav_warehouse'),   href: '/inventory' },
+				{ id: 'orders',      icon: IconOrders,      label: $t('nav_orders'),      href: '/orders' },
+				{ id: 'analytics',   icon: IconAnalytics,   label: $t('nav_analytics'),   href: '/analytics' },
+				{ id: 'audit',       icon: IconAudit,       label: $t('nav_audit'),       href: '/audit' },
+				{ id: 'settings',    icon: IconSettings,    label: $t('nav_settings'),    href: '/settings' },
+				{ id: 'sync',        icon: IconSync,        label: $t('nav_sync'),        onclick: () => (syncOpen = true), separator_before: true },
+			]
+			: [
+				{ id: 'dashboard',  icon: IconDashboard,  label: $t('nav_dashboard'),  href: '/' },
+				{ id: 'inventory',  icon: IconInventory,  label: $t('nav_inventory'),  href: '/inventory' },
+				{ id: 'analytics',  icon: IconAnalytics,  label: $t('nav_analytics'),  href: '/analytics' },
+				{ id: 'orders',     icon: IconOrders,     label: $t('nav_orders'),     href: '/orders' },
+				{ id: 'audit',      icon: IconAudit,      label: $t('nav_audit'),      href: '/audit' },
+				{ id: 'settings',   icon: IconSettings,   label: $t('nav_settings'),   href: '/settings' },
+				{ id: 'sync',       icon: IconSync,       label: $t('nav_sync'),       onclick: () => (syncOpen = true), separator_before: true },
+			]
+	);
 
-	// Apply theme whenever seed color or mode changes
+	// Apply theme whenever seed color, mode, or palette changes
 	$effect(() => {
 		return seedColor.subscribe((color) => {
-			applyTheme(color, $colorMode);
+			applyTheme(color, $colorMode, $paletteMode);
 		});
 	});
 	$effect(() => {
 		return colorMode.subscribe((mode) => {
-			applyTheme($seedColor, mode);
+			applyTheme($seedColor, mode, $paletteMode);
+		});
+	});
+	$effect(() => {
+		return paletteMode.subscribe((pm) => {
+			applyTheme($seedColor, $colorMode, pm);
 		});
 	});
 
@@ -75,7 +95,7 @@
 	{@render children()}
 </main>
 
-<Dock items={dockItems} />
+<Dock items={dockItems} presetKey={$preset} />
 <SyncIndicator />
 
 <!-- Glassmorphic Sync Modal -->

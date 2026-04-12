@@ -4,6 +4,7 @@ import type {
 	AddOrderItemPayload,
 	CreateOrderPayload,
 	Order,
+	OrderItem,
 } from '$lib/tauri/types';
 
 function createOrderStore() {
@@ -33,6 +34,9 @@ function createOrderStore() {
 			const id = await commands.addOrderItem(payload);
 			await load();
 			return id;
+		},
+		async getItems(orderId: string): Promise<OrderItem[]> {
+			return commands.getOrderItems(orderId);
 		},
 	};
 }

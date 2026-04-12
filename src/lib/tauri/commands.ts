@@ -4,6 +4,7 @@ import type {
 	AddTrustedNodePayload,
 	AdjustStockPayload,
 	AppPreset,
+	AppSetting,
 	AuditLog,
 	AuditLogFilter,
 	Category,
@@ -16,10 +17,14 @@ import type {
 	EventRecord,
 	FlowerConstants,
 	FlowerSort,
+	HarvestLogEntry,
 	Item,
 	Order,
+	OrderItem,
+	OrderShortage,
 	PackAssignment,
 	PackageResult,
+	PackagingLogEntry,
 	PackStatus,
 	PriceRecord,
 	RecordSalePayload,
@@ -28,6 +33,7 @@ import type {
 	UpdateCategoryPayload,
 	UpdateFlowerSortPayload,
 	UpdateItemPayload,
+	VersionInfo,
 	WsServerStatus,
 } from './types';
 
@@ -202,6 +208,8 @@ function getMock<T>(cmd: string, args?: Record<string, unknown>): T {
 		}
 		case 'add_order_item':
 			return mockUuid() as unknown as T;
+		case 'get_order_items':
+			return [] as unknown as T;
 
 		// Audit
 		case 'get_audit_logs':
@@ -276,6 +284,8 @@ export const commands = {
 		safeInvoke<Order | null>('get_order', { orderId }),
 	addOrderItem: (payload: AddOrderItemPayload) =>
 		safeInvoke<string>('add_order_item', { payload }),
+	getOrderItems: (orderId: string) =>
+		safeInvoke<OrderItem[]>('get_order_items', { orderId }),
 
 	// Audit
 	getAuditLogs: (filter?: AuditLogFilter) =>
@@ -310,6 +320,8 @@ export const commands = {
 	// Flower ERP — Packaging
 	packageFlowers: (sortId: string, packCount: number) =>
 		safeInvoke<PackageResult>('package_flowers', { sortId, packCount }),
+	getPackagingLog: (limit?: number) =>
+		safeInvoke<PackagingLogEntry[]>('get_packaging_log', { limit }),
 
 	// WebSocket P2P
 	startWsServer: () => safeInvoke<void>('start_ws_server'),
@@ -318,6 +330,7 @@ export const commands = {
 
 	// App Version
 	getAppVersion: () => safeInvoke<string>('get_app_version'),
+	getVersionInfo: () => safeInvoke<VersionInfo>('get_version_info'),
 
 	// Inventory — delete & duplicate
 	deleteItem: (itemId: string) => safeInvoke<void>('delete_item', { itemId }),
@@ -331,4 +344,44 @@ export const commands = {
 		safeInvoke<PackAssignment[]>('get_pack_assignments', { orderId }),
 	updatePackStatus: (id: string, status: PackStatus) =>
 		safeInvoke<void>('update_pack_status', { id, status }),
+
+	// Greenhouse
+	saveFlowerPhoto: (sortId: string, sourcePath: string) =>
+		safeInvoke<string>('save_flower_photo', { sortId, sourcePath }),
+	logGreenhouseHarvest: (
+		sortId: string,
+		delta: number,
+		reason: string,
+		note?: string
+	) => safeInvoke<void>('log_greenhouse_harvest', { sortId, delta, reason, note }),
+	getHarvestLog: (sortId?: string, limit?: number) =>
+		safeInvoke<HarvestLogEntry[]>('get_harvest_log', { sortId, limit }),
+
+	// Orders extended
+	updateOrderExtended: (
+		orderId: string,
+		customerCompany?: string,
+		deliveryAddress?: string,
+		deliveryNotes?: string,
+		packCountOrdered?: number
+	) =>
+		safeInvoke<void>('update_order_extended', {
+			orderId,
+			customerCompany,
+			deliveryAddress,
+			deliveryNotes,
+			packCountOrdered,
+		}),
+	confirmOrderDeadline: (orderId: string) =>
+		safeInvoke<void>('confirm_order_deadline', { orderId }),
+	getOverdueUnconfirmedOrders: () =>
+		safeInvoke<Order[]>('get_overdue_unconfirmed_orders'),
+	checkOrderShortages: () =>
+		safeInvoke<OrderShortage[]>('check_order_shortages'),
+
+	// App Settings
+	getSetting: (key: string) => safeInvoke<string | null>('get_setting', { key }),
+	setSetting: (key: string, value: string) =>
+		safeInvoke<void>('set_setting', { key, value }),
+	getAllSettings: () => safeInvoke<AppSetting[]>('get_all_settings'),
 } as const;

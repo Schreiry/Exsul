@@ -48,9 +48,9 @@ export function formatAmount(value: number, currencyCode: string): string {
 
 // ── Global currency preference ────────────────────────────────────────────────
 function getStoredGlobal(): string {
-	if (typeof localStorage === 'undefined') return 'USD';
+	if (typeof localStorage === 'undefined') return 'GEL';
 	const v = localStorage.getItem('global-currency');
-	return CURRENCIES.some((c) => c.code === v) ? (v as string) : 'USD';
+	return CURRENCIES.some((c) => c.code === v) ? (v as string) : 'GEL';
 }
 
 export const globalCurrency = writable<string>(getStoredGlobal());

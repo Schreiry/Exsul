@@ -7,6 +7,7 @@ export interface DockItemConfig {
 	href?: string;
 	onclick?: () => void;
 	badge?: number | string;
+	separator_before?: boolean;
 }
 
 export interface DockConfig {

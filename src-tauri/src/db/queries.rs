@@ -1,9 +1,9 @@
 use crate::events::types::{
-    AddOrderItemPayload, AddTrustedNodePayload, AuditLog, AuditLogFilter, Category,
+    AddOrderItemPayload, AddTrustedNodePayload, AppSetting, AuditLog, AuditLogFilter, Category,
     CreateCategoryPayload, CreateFlowerSortPayload, CreatePackAssignmentPayload, EventRecord,
-    FlowerConstants, FlowerSort, Item, Order, OrderItem, PackAssignment, PackageResult,
-    PriceRecord, SyncPeer, TrustedNode, UpdateCategoryPayload, UpdateFlowerSortPayload,
-    CreateOrderPayload,
+    FlowerConstants, FlowerSort, HarvestLogEntry, Item, Order, OrderItem, OrderShortage,
+    PackAssignment, PackageResult, PackagingLogEntry, PriceRecord, SyncPeer, TrustedNode,
+    UpdateCategoryPayload, UpdateFlowerSortPayload, CreateOrderPayload,
 };
 use rusqlite::{params, Connection};
 
@@ -334,14 +334,18 @@ pub fn get_orders(
     let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match status_filter {
         Some(s) => (
             "SELECT id, customer_name, customer_email, customer_phone, deadline, status,
-                    total_amount, notes, created_at, updated_at
+                    total_amount, notes, created_at, updated_at,
+                    customer_company, delivery_address, delivery_notes,
+                    pack_count_ordered, pack_count_ready, deadline_confirmed
              FROM orders WHERE status = ?1 ORDER BY created_at DESC"
                 .to_string(),
             vec![Box::new(s.to_string()) as Box<dyn rusqlite::types::ToSql>],
         ),
         None => (
             "SELECT id, customer_name, customer_email, customer_phone, deadline, status,
-                    total_amount, notes, created_at, updated_at
+                    total_amount, notes, created_at, updated_at,
+                    customer_company, delivery_address, delivery_notes,
+                    pack_count_ordered, pack_count_ready, deadline_confirmed
              FROM orders ORDER BY created_at DESC"
                 .to_string(),
             vec![],
@@ -365,6 +369,12 @@ pub fn get_orders(
                 notes: row.get(7)?,
                 created_at: row.get(8)?,
                 updated_at: row.get(9)?,
+                customer_company: row.get(10)?,
+                delivery_address: row.get(11)?,
+                delivery_notes: row.get(12)?,
+                pack_count_ordered: row.get::<_, Option<i32>>(13)?.unwrap_or(0),
+                pack_count_ready: row.get::<_, Option<i32>>(14)?.unwrap_or(0),
+                deadline_confirmed: row.get::<_, Option<i32>>(15)?.unwrap_or(0) != 0,
             })
         })
         .map_err(|e| e.to_string())?
@@ -377,7 +387,9 @@ pub fn get_orders(
 pub fn get_order(conn: &Connection, order_id: &str) -> Result<Option<Order>, String> {
     let result = conn.query_row(
         "SELECT id, customer_name, customer_email, customer_phone, deadline, status,
-                total_amount, notes, created_at, updated_at
+                total_amount, notes, created_at, updated_at,
+                customer_company, delivery_address, delivery_notes,
+                pack_count_ordered, pack_count_ready, deadline_confirmed
          FROM orders WHERE id = ?1",
         [order_id],
         |row| {
@@ -392,6 +404,12 @@ pub fn get_order(conn: &Connection, order_id: &str) -> Result<Option<Order>, Str
                 notes: row.get(7)?,
                 created_at: row.get(8)?,
                 updated_at: row.get(9)?,
+                customer_company: row.get(10)?,
+                delivery_address: row.get(11)?,
+                delivery_notes: row.get(12)?,
+                pack_count_ordered: row.get::<_, Option<i32>>(13)?.unwrap_or(0),
+                pack_count_ready: row.get::<_, Option<i32>>(14)?.unwrap_or(0),
+                deadline_confirmed: row.get::<_, Option<i32>>(15)?.unwrap_or(0) != 0,
             })
         },
     );
@@ -681,7 +699,8 @@ pub fn get_flower_sorts(conn: &Connection) -> Result<Vec<FlowerSort>, String> {
         .prepare(
             "SELECT id, name, variety, color_hex, raw_stock, pkg_stock,
                     purchase_price, sell_price_stem, flowers_per_pack_override,
-                    created_at, updated_at
+                    created_at, updated_at,
+                    photo_path, description, total_harvested
              FROM flower_sorts ORDER BY name ASC, variety ASC",
         )
         .map_err(|e| e.to_string())?;
@@ -700,6 +719,9 @@ pub fn get_flower_sorts(conn: &Connection) -> Result<Vec<FlowerSort>, String> {
                 flowers_per_pack_override: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                photo_path: row.get(11)?,
+                description: row.get(12)?,
+                total_harvested: row.get::<_, Option<i32>>(13)?.unwrap_or(0),
             })
         })
         .map_err(|e| e.to_string())?
@@ -715,8 +737,8 @@ pub fn insert_flower_sort(
     payload: &CreateFlowerSortPayload,
 ) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO flower_sorts (id, name, variety, color_hex, purchase_price, sell_price_stem, flowers_per_pack_override)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO flower_sorts (id, name, variety, color_hex, purchase_price, sell_price_stem, flowers_per_pack_override, description)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             id,
             payload.name,
@@ -725,6 +747,7 @@ pub fn insert_flower_sort(
             payload.purchase_price.unwrap_or(0.0),
             payload.sell_price_stem.unwrap_or(0.0),
             payload.flowers_per_pack_override,
+            payload.description,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -737,14 +760,16 @@ pub fn update_flower_sort(
 ) -> Result<(), String> {
     conn.execute(
         "UPDATE flower_sorts SET
-            name                     = COALESCE(?2, name),
-            variety                  = COALESCE(?3, variety),
-            color_hex                = COALESCE(?4, color_hex),
-            raw_stock                = COALESCE(?5, raw_stock),
-            pkg_stock                = COALESCE(?6, pkg_stock),
-            purchase_price           = COALESCE(?7, purchase_price),
-            sell_price_stem          = COALESCE(?8, sell_price_stem),
-            flowers_per_pack_override = COALESCE(?9, flowers_per_pack_override),
+            name                      = COALESCE(?2,  name),
+            variety                   = COALESCE(?3,  variety),
+            color_hex                 = COALESCE(?4,  color_hex),
+            raw_stock                 = COALESCE(?5,  raw_stock),
+            pkg_stock                 = COALESCE(?6,  pkg_stock),
+            purchase_price            = COALESCE(?7,  purchase_price),
+            sell_price_stem           = COALESCE(?8,  sell_price_stem),
+            flowers_per_pack_override = COALESCE(?9,  flowers_per_pack_override),
+            description               = COALESCE(?10, description),
+            photo_path                = COALESCE(?11, photo_path),
             updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
          WHERE id = ?1",
         params![
@@ -757,6 +782,8 @@ pub fn update_flower_sort(
             payload.purchase_price,
             payload.sell_price_stem,
             payload.flowers_per_pack_override,
+            payload.description,
+            payload.photo_path,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -951,6 +978,296 @@ pub fn duplicate_item(conn: &Connection, source_id: &str, new_id: &str) -> Resul
     Ok(())
 }
 
+// ============================================================
+// Orders — extended operations (migration 011)
+// ============================================================
+
+pub fn update_order_extended(
+    conn: &Connection,
+    order_id: &str,
+    customer_company: Option<&str>,
+    delivery_address: Option<&str>,
+    delivery_notes: Option<&str>,
+    pack_count_ordered: Option<i32>,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE orders SET
+            customer_company   = COALESCE(?2, customer_company),
+            delivery_address   = COALESCE(?3, delivery_address),
+            delivery_notes     = COALESCE(?4, delivery_notes),
+            pack_count_ordered = COALESCE(?5, pack_count_ordered),
+            updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+         WHERE id = ?1",
+        params![
+            order_id,
+            customer_company,
+            delivery_address,
+            delivery_notes,
+            pack_count_ordered,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn confirm_order_deadline(conn: &Connection, order_id: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE orders SET deadline_confirmed = 1,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+         WHERE id = ?1",
+        [order_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_overdue_unconfirmed_orders(conn: &Connection) -> Result<Vec<Order>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, customer_name, customer_email, customer_phone, deadline, status,
+                    total_amount, notes, created_at, updated_at,
+                    customer_company, delivery_address, delivery_notes,
+                    pack_count_ordered, pack_count_ready, deadline_confirmed
+             FROM orders
+             WHERE deadline IS NOT NULL
+               AND deadline < strftime('%Y-%m-%dT%H:%M:%f', 'now')
+               AND deadline_confirmed = 0
+               AND status NOT IN ('completed', 'cancelled')
+             ORDER BY deadline ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let orders = stmt
+        .query_map([], |row| {
+            Ok(Order {
+                id: row.get(0)?,
+                customer_name: row.get(1)?,
+                customer_email: row.get(2)?,
+                customer_phone: row.get(3)?,
+                deadline: row.get(4)?,
+                status: row.get(5)?,
+                total_amount: row.get(6)?,
+                notes: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                customer_company: row.get(10)?,
+                delivery_address: row.get(11)?,
+                delivery_notes: row.get(12)?,
+                pack_count_ordered: row.get::<_, Option<i32>>(13)?.unwrap_or(0),
+                pack_count_ready: row.get::<_, Option<i32>>(14)?.unwrap_or(0),
+                deadline_confirmed: row.get::<_, Option<i32>>(15)?.unwrap_or(0) != 0,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(orders)
+}
+
+pub fn check_order_shortages(conn: &Connection) -> Result<Vec<OrderShortage>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT
+                oi.order_id,
+                o.customer_name,
+                oi.sort_id,
+                fs.name,
+                oi.pack_count,
+                fs.pkg_stock,
+                (oi.pack_count - fs.pkg_stock) AS shortage
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id
+             JOIN flower_sorts fs ON fs.id = oi.sort_id
+             WHERE o.status NOT IN ('completed', 'cancelled')
+               AND oi.sort_id IS NOT NULL
+               AND oi.pack_count > 0
+               AND oi.pack_count > fs.pkg_stock
+             ORDER BY shortage DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let shortages = stmt
+        .query_map([], |row| {
+            Ok(OrderShortage {
+                order_id: row.get(0)?,
+                customer_name: row.get(1)?,
+                sort_id: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                sort_name: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+                ordered_packs: row.get(4)?,
+                available_packs: row.get(5)?,
+                shortage: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(shortages)
+}
+
+// ============================================================
+// Greenhouse harvest log (migration 010)
+// ============================================================
+
+pub fn insert_harvest_log(
+    conn: &Connection,
+    id: &str,
+    sort_id: &str,
+    delta: i32,
+    reason: &str,
+    note: Option<&str>,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO greenhouse_harvest_log (id, sort_id, delta, reason, note)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, sort_id, delta, reason, note],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Update total_harvested accumulator for positive deltas
+    if delta > 0 {
+        conn.execute(
+            "UPDATE flower_sorts SET total_harvested = total_harvested + ?2,
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+             WHERE id = ?1",
+            params![sort_id, delta],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+pub fn get_harvest_log(
+    conn: &Connection,
+    sort_id: Option<&str>,
+    limit: Option<i64>,
+) -> Result<Vec<HarvestLogEntry>, String> {
+    let lim = limit.unwrap_or(200);
+
+    let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match sort_id {
+        Some(sid) => (
+            "SELECT hl.id, hl.sort_id, COALESCE(fs.name, ''), hl.delta, hl.reason, hl.note, hl.created_at
+             FROM greenhouse_harvest_log hl
+             LEFT JOIN flower_sorts fs ON fs.id = hl.sort_id
+             WHERE hl.sort_id = ?1
+             ORDER BY hl.created_at DESC LIMIT ?2"
+                .to_string(),
+            vec![
+                Box::new(sid.to_string()) as Box<dyn rusqlite::types::ToSql>,
+                Box::new(lim),
+            ],
+        ),
+        None => (
+            "SELECT hl.id, hl.sort_id, COALESCE(fs.name, ''), hl.delta, hl.reason, hl.note, hl.created_at
+             FROM greenhouse_harvest_log hl
+             LEFT JOIN flower_sorts fs ON fs.id = hl.sort_id
+             ORDER BY hl.created_at DESC LIMIT ?1"
+                .to_string(),
+            vec![Box::new(lim) as Box<dyn rusqlite::types::ToSql>],
+        ),
+    };
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|p| p.as_ref()).collect();
+
+    let entries = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok(HarvestLogEntry {
+                id: row.get(0)?,
+                sort_id: row.get(1)?,
+                sort_name: row.get(2)?,
+                delta: row.get(3)?,
+                reason: row.get(4)?,
+                note: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(entries)
+}
+
+pub fn set_flower_photo_path(
+    conn: &Connection,
+    sort_id: &str,
+    photo_path: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE flower_sorts SET photo_path = ?2,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+         WHERE id = ?1",
+        params![sort_id, photo_path],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============================================================
+// App settings (migration 012)
+// ============================================================
+
+pub fn get_setting(conn: &Connection, key: &str) -> Result<Option<String>, String> {
+    let result = conn.query_row(
+        "SELECT value FROM app_settings WHERE key = ?1",
+        [key],
+        |row| row.get(0),
+    );
+    match result {
+        Ok(v) => Ok(Some(v)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value, updated_at)
+         VALUES (?1, ?2, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+        params![key, value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn get_all_settings(conn: &Connection) -> Result<Vec<AppSetting>, String> {
+    let mut stmt = conn
+        .prepare("SELECT key, value, value_type FROM app_settings ORDER BY key ASC")
+        .map_err(|e| e.to_string())?;
+
+    let settings = stmt
+        .query_map([], |row| {
+            Ok(AppSetting {
+                key: row.get(0)?,
+                value: row.get(1)?,
+                value_type: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(settings)
+}
+
+// ============================================================
+// Schema version (for VersionInfo)
+// ============================================================
+
+pub fn get_schema_version(conn: &Connection) -> i32 {
+    conn.query_row(
+        "SELECT MAX(version) FROM schema_migrations",
+        [],
+        |row| row.get::<_, Option<i32>>(0),
+    )
+    .unwrap_or(None)
+    .unwrap_or(0)
+}
+
 pub fn update_item_card_color(conn: &Connection, item_id: &str, color: Option<&str>) -> Result<(), String> {
     conn.execute(
         "UPDATE items SET card_color = ?1, updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?2",
@@ -1058,4 +1375,37 @@ pub fn update_pack_status(conn: &Connection, id: &str, status: &str) -> Result<(
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ── Packaging Log ────────────────────────────────────────────
+
+pub fn get_packaging_log(
+    conn: &Connection,
+    limit: Option<i64>,
+) -> Result<Vec<PackagingLogEntry>, String> {
+    let lim = limit.unwrap_or(200);
+    let mut stmt = conn
+        .prepare(
+            "SELECT pl.id, pl.sort_id, fs.name, pl.pack_count, pl.stems_used, pl.created_at
+             FROM packaging_log pl
+             LEFT JOIN flower_sorts fs ON fs.id = pl.sort_id
+             ORDER BY pl.created_at DESC
+             LIMIT ?1",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([lim], |row| {
+            Ok(PackagingLogEntry {
+                id: row.get(0)?,
+                sort_id: row.get(1)?,
+                sort_name: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                pack_count: row.get(3)?,
+                stems_used: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
