@@ -278,6 +278,17 @@
 		margin: 6px 0;
 	}
 
+	/* Responsive dock sizing */
+	@media (min-width: 1600px) and (max-width: 2399px) {
+		.dock-bar { gap: 5px; padding: 9px 14px; }
+		.dock-sep { height: 26px; margin: 0 7px; }
+	}
+
+	@media (min-width: 2400px) {
+		.dock-bar { gap: 6px; padding: 10px 16px; }
+		.dock-sep { height: 30px; margin: 0 8px; }
+	}
+
 	/* Light mode overrides */
 	:global([data-theme="light"]) .dock-bar {
 		background:

@@ -5,6 +5,8 @@
 	import { preset } from '$lib/stores/preset';
 	import { t } from '$lib/stores/i18n';
 	import { commands } from '$lib/tauri/commands';
+	import { globalCurrency, formatAmount } from '$lib/stores/currency';
+	import { convertFileSrc } from '@tauri-apps/api/core';
 	import LiquidGlassCard from '$lib/components/LiquidGlassCard.svelte';
 	import ItemDetailModal from '$lib/components/inventory/ItemDetailModal.svelte';
 	import PackAssignmentModal from '$lib/components/flowers/PackAssignmentModal.svelte';
@@ -19,14 +21,38 @@
 	let packingItem = $state<Item | null>(null);
 	let sellingItem = $state<Item | null>(null);
 	let packOpen = $state(false);
+	let detailSort = $state<FlowerSort | null>(null);
+
+	// Resolved app data dir for serving flower photos via asset protocol
+	let appDataDirPath = $state('');
 
 	// Load flower sorts + constants when in flowers preset
 	$effect(() => {
 		if ($preset === 'flowers') {
 			flowerSorts.load();
 			flowerConstants.load();
+			if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+				import('@tauri-apps/api/path').then(({ appDataDir }) =>
+					appDataDir().then((dir) => { appDataDirPath = dir; })
+				);
+			}
 		}
 	});
+
+	function resolvePhoto(photoPath: string | null | undefined): string | null {
+		if (!photoPath) return null;
+		if (photoPath.includes(':') || photoPath.startsWith('/')) {
+			return convertFileSrc(photoPath);
+		}
+		if (!appDataDirPath) return null;
+		const base = appDataDirPath.endsWith('\\') || appDataDirPath.endsWith('/') ? appDataDirPath : appDataDirPath + '/';
+		return convertFileSrc(base + photoPath.replace(/\\/g, '/'));
+	}
+
+	function fmt(value: number): string {
+		return formatAmount(value, $globalCurrency);
+	}
+
 
 	// ── Warehouse view: filtered flower sorts ─────────────────
 	const warehouseSorts = $derived.by(() => {
@@ -46,6 +72,10 @@
 
 	const warehouseTotalPkg = $derived(warehouseSorts.reduce((s, f) => s + f.pkg_stock, 0));
 	const warehouseTotalRaw = $derived(warehouseSorts.reduce((s, f) => s + f.raw_stock, 0));
+	const warehouseTotalValue = $derived($flowerSorts.reduce((s, sort) => {
+		const fpp = sort.flowers_per_pack_override ?? $flowerConstants.flowers_per_pack;
+		return s + sort.pkg_stock * fpp * sort.sell_price_stem + sort.raw_stock * sort.sell_price_stem;
+	}, 0));
 
 	// ── Sort manager state ─────────────────────────────────────
 	let newSortName = $state('');
@@ -110,15 +140,7 @@
 	let previewUrl = $state<string | null>(null);
 	let pendingImageBase64 = $state<string | null>(null);
 
-	// Resolved app data dir for serving images via asset protocol
-	let appDataDirPath = $state('');
-	$effect(() => {
-		if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-			import('@tauri-apps/api/path').then(({ appDataDir }) =>
-				appDataDir().then((dir) => { appDataDirPath = dir; })
-			);
-		}
-	});
+
 
 	let searchQuery = $state('');
 	let filterCategory = $state('');
@@ -313,6 +335,10 @@
 				<span class="wh-kpi-val">{$flowerSorts.length}</span>
 				<span class="wh-kpi-label">Видов сырья</span>
 			</div>
+			<div class="wh-kpi-card wh-kpi-accent">
+				<span class="wh-kpi-val">{fmt(warehouseTotalValue)}</span>
+				<span class="wh-kpi-label">Стоимость склада</span>
+			</div>
 		</div>
 
 		<!-- Cards showing pkg_stock -->
@@ -321,21 +347,116 @@
 		{:else}
 			<div class="wh-grid">
 				{#each warehouseSorts as sort (sort.id)}
-					<div class="wh-card">
-						<div class="wh-card-name">{sort.name}</div>
-						{#if sort.variety}<div class="wh-card-variety">{sort.variety}</div>{/if}
-						<div class="wh-stocks">
-							<div class="wh-stock">
-								<span class="wh-stock-val">{sort.pkg_stock}</span>
-								<span class="wh-stock-unit">уп.</span>
+					{@const photoSrc = resolvePhoto(sort.photo_path)}
+					{@const fpp = sort.flowers_per_pack_override ?? $flowerConstants.flowers_per_pack}
+					{@const packValue = sort.pkg_stock * fpp * sort.sell_price_stem}
+					<button class="wh-card" type="button" onclick={() => (detailSort = sort)}>
+						<div class="wh-card-photo">
+							{#if photoSrc}
+								<img src={photoSrc} alt={sort.name} class="wh-card-img" />
+							{:else}
+								<div class="wh-card-placeholder" style:color={sort.color_hex ?? 'var(--color-primary)'}>
+									<svg viewBox="0 0 24 24" width="28" height="28" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4">
+										<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+										<polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+										<line x1="12" y1="22.08" x2="12" y2="12"/>
+									</svg>
+								</div>
+							{/if}
+							{#if sort.pkg_stock > 0}
+								<span class="wh-pkg-badge">{sort.pkg_stock} уп.</span>
+							{/if}
+						</div>
+						<div class="wh-card-body">
+							<div class="wh-card-name">{sort.name}</div>
+							{#if sort.variety}<div class="wh-card-variety">{sort.variety}</div>{/if}
+							<div class="wh-stocks">
+								<div class="wh-stock">
+									<span class="wh-stock-val">{sort.pkg_stock}</span>
+									<span class="wh-stock-unit">уп.</span>
+								</div>
+								<div class="wh-stock muted">
+									<span class="wh-stock-val">{sort.raw_stock}</span>
+									<span class="wh-stock-unit">шт.</span>
+								</div>
 							</div>
-							<div class="wh-stock muted">
-								<span class="wh-stock-val">{sort.raw_stock}</span>
-								<span class="wh-stock-unit">шт.</span>
+							{#if sort.sell_price_stem > 0}
+								<div class="wh-card-price">{fmt(packValue)}</div>
+							{/if}
+						</div>
+					</button>
+				{/each}
+			</div>
+		{/if}
+
+		<!-- Detail modal for warehouse sort -->
+		{#if detailSort}
+			{@const ds = detailSort}
+			{@const dFpp = ds.flowers_per_pack_override ?? $flowerConstants.flowers_per_pack}
+			{@const dPackValue = ds.pkg_stock * dFpp * ds.sell_price_stem}
+			{@const dRawValue = ds.raw_stock * ds.sell_price_stem}
+			{@const dTotalStems = ds.pkg_stock * dFpp}
+			{@const dPhotoSrc = resolvePhoto(ds.photo_path)}
+			<!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus -->
+			<div class="wh-modal-overlay" role="dialog" aria-modal="true" tabindex="-1" onclick={() => (detailSort = null)} onkeydown={(e) => e.key === 'Escape' && (detailSort = null)}>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="wh-modal" role="document" onclick={(e) => e.stopPropagation()}>
+					{#if dPhotoSrc}
+						<div class="wh-modal-photo">
+							<img src={dPhotoSrc} alt={ds.name} />
+						</div>
+					{/if}
+					<div class="wh-modal-content">
+						<h2 class="wh-modal-title">{ds.name}</h2>
+						{#if ds.variety}<p class="wh-modal-variety">{ds.variety}</p>{/if}
+
+						<div class="wh-modal-grid">
+							<div class="wh-modal-stat">
+								<span class="wh-modal-stat-val">{ds.pkg_stock}</span>
+								<span class="wh-modal-stat-lbl">Упаковок</span>
+							</div>
+							<div class="wh-modal-stat">
+								<span class="wh-modal-stat-val">{dFpp}</span>
+								<span class="wh-modal-stat-lbl">Цветков/уп.</span>
+							</div>
+							<div class="wh-modal-stat">
+								<span class="wh-modal-stat-val">{dTotalStems}</span>
+								<span class="wh-modal-stat-lbl">Цветков всего</span>
+							</div>
+							<div class="wh-modal-stat">
+								<span class="wh-modal-stat-val">{ds.raw_stock}</span>
+								<span class="wh-modal-stat-lbl">Сырьё (шт.)</span>
 							</div>
 						</div>
+
+						<div class="wh-modal-finance">
+							<div class="wh-modal-fin-row">
+								<span>Цена за стебель</span>
+								<span class="wh-modal-fin-val">{fmt(ds.sell_price_stem)}</span>
+							</div>
+							{#if ds.purchase_price > 0}
+								<div class="wh-modal-fin-row">
+									<span>Закупочная цена/шт.</span>
+									<span class="wh-modal-fin-val">{fmt(ds.purchase_price)}</span>
+								</div>
+							{/if}
+							<div class="wh-modal-fin-row">
+								<span>Стоимость упаковок</span>
+								<span class="wh-modal-fin-val accent">{fmt(dPackValue)}</span>
+							</div>
+							<div class="wh-modal-fin-row">
+								<span>Стоимость сырья</span>
+								<span class="wh-modal-fin-val">{fmt(dRawValue)}</span>
+							</div>
+							<div class="wh-modal-fin-row total">
+								<span>Итого</span>
+								<span class="wh-modal-fin-val accent">{fmt(dPackValue + dRawValue)}</span>
+							</div>
+						</div>
+
+						<button class="wh-modal-close" type="button" onclick={() => (detailSort = null)}>Закрыть</button>
 					</div>
-				{/each}
+				</div>
 			</div>
 		{/if}
 
@@ -1027,7 +1148,7 @@
 		font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
 	}
 	.btn-pack:hover { opacity: 0.88; }
-	.wh-kpi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+	.wh-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 	.wh-kpi-card {
 		background: var(--glass-bg); border: 1px solid var(--glass-border);
 		border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 3px;
@@ -1048,4 +1169,232 @@
 	.wh-stock.muted .wh-stock-val { font-size: 1rem; color: var(--color-outline); }
 	.wh-stock-val { font-size: 1.5rem; font-weight: 700; color: var(--color-primary); line-height: 1; }
 	.wh-stock-unit { font-size: 0.72rem; color: var(--color-outline); }
+
+	/* ── Warehouse card grid — enlarged for photos ── */
+	.wh-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+
+	.wh-card {
+		cursor: pointer;
+		text-align: left;
+		transition: transform 0.2s var(--ease-spring), box-shadow 0.2s, border-color 0.15s;
+	}
+
+	.wh-card:hover {
+		transform: translateY(-3px);
+		box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+		border-color: var(--color-outline);
+	}
+
+	/* ── Card photo area ── */
+	.wh-card-photo {
+		position: relative;
+		width: 100%;
+		aspect-ratio: 4 / 3;
+		border-radius: 10px;
+		overflow: hidden;
+		background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+		flex-shrink: 0;
+	}
+
+	.wh-card-img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.wh-card-placeholder {
+		width: 100%;
+		height: 100%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		opacity: 0.4;
+	}
+
+	.wh-pkg-badge {
+		position: absolute;
+		top: 6px;
+		right: 6px;
+		background: var(--color-primary);
+		color: var(--color-on-primary, #fff);
+		font-size: 0.68rem;
+		font-weight: 700;
+		padding: 2px 8px;
+		border-radius: 20px;
+		line-height: 1.4;
+		letter-spacing: 0.02em;
+	}
+
+	/* ── Card body ── */
+	.wh-card-body {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding-top: 8px;
+	}
+
+	.wh-card-price {
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: var(--color-primary);
+		margin-top: 2px;
+	}
+
+	/* ── Detail Modal ── */
+	.wh-modal-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 2000;
+		background: rgba(0, 0, 0, 0.55);
+		backdrop-filter: blur(10px);
+		-webkit-backdrop-filter: blur(10px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 24px;
+	}
+
+	.wh-modal {
+		width: 100%;
+		max-width: 460px;
+		max-height: 90vh;
+		overflow-y: auto;
+		background: var(--glass-bg);
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
+		border-radius: 20px;
+		box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+	}
+
+	.wh-modal-photo {
+		width: 100%;
+		max-height: 240px;
+		overflow: hidden;
+	}
+
+	.wh-modal-photo img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+
+	.wh-modal-content {
+		padding: 20px 24px 24px;
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	.wh-modal-title {
+		font-size: 1.3rem;
+		font-weight: 700;
+		color: var(--color-on-surface);
+		margin: 0;
+	}
+
+	.wh-modal-variety {
+		font-size: 0.82rem;
+		color: var(--color-outline);
+		margin: -10px 0 0;
+	}
+
+	/* Stats grid (2×2) */
+	.wh-modal-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+	}
+
+	.wh-modal-stat {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 3px;
+		padding: 10px 8px;
+		border-radius: 12px;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.05);
+	}
+
+	.wh-modal-stat-val {
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: var(--color-primary);
+		line-height: 1;
+	}
+
+	.wh-modal-stat-lbl {
+		font-size: 0.7rem;
+		color: var(--color-outline);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	/* Finance breakdown */
+	.wh-modal-finance {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		border-top: 1px solid var(--glass-border);
+		padding-top: 14px;
+	}
+
+	.wh-modal-fin-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		font-size: 0.85rem;
+		color: var(--color-on-surface);
+		opacity: 0.85;
+	}
+
+	.wh-modal-fin-row.total {
+		font-weight: 700;
+		font-size: 0.95rem;
+		opacity: 1;
+		border-top: 1px solid var(--glass-border);
+		padding-top: 10px;
+		margin-top: 4px;
+	}
+
+	.wh-modal-fin-val {
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.wh-modal-fin-val.accent {
+		color: var(--color-primary);
+	}
+
+	.wh-modal-close {
+		width: 100%;
+		padding: 10px;
+		border-radius: 12px;
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		color: var(--color-on-surface);
+		font-size: 0.88rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.15s, border-color 0.15s;
+	}
+
+	.wh-modal-close:hover {
+		background: rgba(255, 255, 255, 0.06);
+		border-color: var(--color-outline);
+	}
+
+	/* Light theme adjustments */
+	:global([data-theme="light"]) .wh-modal-stat {
+		background: rgba(0, 0, 0, 0.03);
+		border-color: rgba(0, 0, 0, 0.06);
+	}
+
+	:global([data-theme="light"]) .wh-modal-overlay {
+		background: rgba(0, 0, 0, 0.35);
+	}
 </style>

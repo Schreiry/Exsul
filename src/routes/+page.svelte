@@ -7,9 +7,13 @@
 	import { nodeId, wsServerRunning, wsPeers, loadWsStatus } from '$lib/stores/sync';
 	import { t } from '$lib/stores/i18n';
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
+	import { commands } from '$lib/tauri/commands';
+	import { convertFileSrc } from '@tauri-apps/api/core';
+	import HarvestTimeline from '$lib/components/charts/HarvestTimeline.svelte';
+	import type { HarvestLogEntry } from '$lib/tauri/types';
 
-	type WidgetId = 'sync' | 'orders' | 'inventory' | 'chart' | 'activity';
-	const ALL_WIDGETS: WidgetId[] = ['sync', 'orders', 'inventory', 'chart', 'activity'];
+	type WidgetId = 'sync' | 'orders' | 'inventory' | 'greenhouse' | 'chart' | 'activity';
+	const ALL_WIDGETS: WidgetId[] = ['sync', 'orders', 'greenhouse', 'inventory', 'chart', 'activity'];
 
 	function loadVisibleWidgets(): Set<WidgetId> {
 		try {
@@ -33,16 +37,39 @@
 	const widgetLabels: Record<WidgetId, string> = {
 		sync: $t('widget_sync'),
 		orders: $t('widget_orders'),
+		greenhouse: $t('nav_greenhouse'),
 		inventory: $t('widget_inventory'),
 		chart: $t('widget_chart'),
 		activity: $t('widget_activity'),
 	};
 
 	let chartCanvas = $state<HTMLCanvasElement | null>(null);
+	let harvestLog = $state<HarvestLogEntry[]>([]);
+	let appDataDirPath = $state<string>('');
+
+	function resolvePhoto(photoPath: string | null | undefined): string | null {
+		if (!photoPath) return null;
+		if (photoPath.includes(':') || photoPath.startsWith('/')) {
+			return convertFileSrc(photoPath);
+		}
+		if (!appDataDirPath) return null;
+		const base = appDataDirPath.endsWith('\\') || appDataDirPath.endsWith('/') ? appDataDirPath : appDataDirPath + '/';
+		return convertFileSrc(base + photoPath.replace(/\\/g, '/'));
+	}
+
+	function fmt(value: number): string {
+		return formatAmount(value, $globalCurrency);
+	}
 
 	$effect(() => {
 		if ($preset === 'flowers') {
 			flowerSorts.load();
+			commands.getHarvestLog(undefined, 100).then(r => { if (r) harvestLog = r; });
+			if (typeof window !== 'undefined') {
+				import('@tauri-apps/api/path').then(({ appDataDir }) =>
+					appDataDir().then(dir => { appDataDirPath = dir; })
+				);
+			}
 		}
 		orders.load();
 		auditLog.load({ limit: 8 });
@@ -64,8 +91,14 @@
 		ctx.scale(dpr, dpr);
 
 		const isFlowers = $preset === 'flowers' && $flowerSorts.length > 0;
+		const fc = $flowerConstants;
 		const chartItems = isFlowers
-			? $flowerSorts.slice(0, 8).map(s => ({ label: s.name, value: s.pkg_stock * $flowerConstants.price_per_pack }))
+			? $flowerSorts.slice(0, 8).map(s => {
+				const fpp = s.flowers_per_pack_override ?? fc.flowers_per_pack;
+				const packValue = s.pkg_stock * fpp * s.sell_price_stem;
+				const rawValue = s.raw_stock * s.sell_price_stem;
+				return { label: s.name, value: packValue + rawValue };
+			})
 			: $inventory.slice(0, 8).map(i => ({ label: i.name, value: i.revenue }));
 		if (chartItems.length === 0) {
 			ctx.clearRect(0, 0, w, h);
@@ -116,10 +149,6 @@
 		ctx.stroke();
 	});
 
-	function fmt(value: number): string {
-		return formatAmount(value, $globalCurrency);
-	}
-
 	function truncateId(id: string): string {
 		if (!id) return '—';
 		return id.length > 16 ? id.slice(0, 8) + '…' + id.slice(-4) : id;
@@ -145,6 +174,20 @@
 	};
 
 	const pendingOrders = $derived($orders.filter((o) => o.status === 'pending' || o.status === 'in_progress'));
+
+	// Cursor glow effect for bento cards
+	function handleCardPointerMove(e: PointerEvent) {
+		const card = (e.currentTarget as HTMLElement);
+		const rect = card.getBoundingClientRect();
+		card.style.setProperty('--glow-x', `${e.clientX - rect.left}px`);
+		card.style.setProperty('--glow-y', `${e.clientY - rect.top}px`);
+	}
+
+	function handleCardPointerLeave(e: PointerEvent) {
+		const card = (e.currentTarget as HTMLElement);
+		card.style.setProperty('--glow-x', '-200px');
+		card.style.setProperty('--glow-y', '-200px');
+	}
 </script>
 
 <div class="cc-page">
@@ -179,7 +222,8 @@
 
 		<!-- ── SYNC STATUS ────────────────────────────────────── -->
 		{#if visibleWidgets.has('sync')}
-		<div class="bento-card bento-sync">
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="bento-card bento-sync" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-sync">
 				<span class="bento-icon">⚡</span>
 				<span class="bento-label">{$t('bento_sync_title')}</span>
@@ -217,7 +261,8 @@
 
 		<!-- ── ORDERS ─────────────────────────────────────────── -->
 		{#if visibleWidgets.has('orders')}
-		<div class="bento-card bento-orders">
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="bento-card bento-orders" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-orders">
 				<span class="bento-icon">📋</span>
 				<span class="bento-label">{$t('bento_orders_title')}</span>
@@ -254,9 +299,75 @@
 
 		{/if}
 
+		<!-- ── GREENHOUSE (flowers only) ──────────────────────── -->
+		{#if visibleWidgets.has('greenhouse') && $preset === 'flowers'}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="bento-card bento-greenhouse" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
+			<div class="bento-card-header accent-greenhouse">
+				<span class="bento-icon">🌱</span>
+				<span class="bento-label">Теплица</span>
+				<a href="/flowers" class="bento-view-all">{$t('bento_view_all')}</a>
+			</div>
+			<div class="bento-card-body">
+				{#if $flowerSorts.length === 0}
+					<p class="bento-empty">Нет сырья в теплице</p>
+				{:else}
+					<div class="gh-kpi-grid">
+						<div class="gh-kpi">
+							<span class="gh-kpi-val">{$totalRawStems}</span>
+							<span class="gh-kpi-lbl">стеблей</span>
+						</div>
+						<div class="gh-kpi">
+							<span class="gh-kpi-val">{$flowerSorts.length}</span>
+							<span class="gh-kpi-lbl">видов</span>
+						</div>
+						<div class="gh-kpi">
+							<span class="gh-kpi-val">{$flowerSorts.reduce((s, x) => s + (x.total_harvested ?? 0), 0)}</span>
+							<span class="gh-kpi-lbl">собрано</span>
+						</div>
+					</div>
+					{#if harvestLog.length > 0}
+						<div class="gh-mini-chart">
+							<HarvestTimeline entries={harvestLog} days={7} />
+						</div>
+					{/if}
+					<div class="gh-recent-label">Последние карточки сырья</div>
+					<div class="gh-recent-list">
+						{#each [...$flowerSorts].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 4) as sort (sort.id)}
+							{@const photoSrc = resolvePhoto(sort.photo_path)}
+							<div class="gh-recent-card" style:border-left-color={sort.color_hex ?? 'var(--color-primary)'}>
+								{#if photoSrc}
+									<img class="gh-recent-photo" src={photoSrc} alt={sort.name} />
+								{:else}
+									<div class="gh-recent-placeholder" style:color={sort.color_hex ?? 'var(--color-primary)'}>
+										<svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round">
+											<path d="M12 22c-4 0-8-2-8-6 0-3 2.5-5.5 4-7.5S12 2 12 2s3.5 4.5 4 6.5 4 4.5 4 7.5c0 4-4 6-8 6z"/>
+										</svg>
+									</div>
+								{/if}
+								<div class="gh-recent-info">
+									<span class="gh-recent-name">{sort.name}</span>
+									{#if sort.variety}<span class="gh-recent-variety">{sort.variety}</span>{/if}
+									{#if sort.sell_price_stem > 0}
+										<span class="gh-recent-price">{fmt(sort.sell_price_stem)}/шт.</span>
+									{/if}
+								</div>
+								<div class="gh-recent-stats">
+									<span class="gh-recent-raw">🌿 {sort.raw_stock}</span>
+									<span class="gh-recent-pkg">📦 {sort.pkg_stock}</span>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		</div>
+		{/if}
+
 		<!-- ── INVENTORY SUMMARY ──────────────────────────────── -->
 		{#if visibleWidgets.has('inventory')}
-		<div class="bento-card bento-inventory">
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="bento-card bento-inventory" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-inventory">
 				<span class="bento-icon">📦</span>
 				<span class="bento-label">{$t('bento_inventory_title')}</span>
@@ -289,7 +400,12 @@
 						</div>
 					</div>
 					<div class="inv-recent-list">
-						{#each $flowerSorts.slice(0, 3) as sort}
+						{#each [...$flowerSorts].sort((a, b) => {
+							const fA = a.flowers_per_pack_override ?? $flowerConstants.flowers_per_pack;
+							const fB = b.flowers_per_pack_override ?? $flowerConstants.flowers_per_pack;
+							return (b.pkg_stock * fB * b.sell_price_stem + b.raw_stock * b.sell_price_stem)
+								 - (a.pkg_stock * fA * a.sell_price_stem + a.raw_stock * a.sell_price_stem);
+						}).slice(0, 3) as sort}
 							<div class="inv-recent-row">
 								<div class="inv-recent-info">
 									<span class="inv-recent-name">{sort.name}</span>
@@ -335,16 +451,17 @@
 
 		<!-- ── ANALYTICS MINI-CHART ───────────────────────────── -->
 		{#if visibleWidgets.has('chart')}
-		<div class="bento-card bento-chart bento-chart-wide">
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="bento-card bento-chart bento-chart-wide" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-chart">
 				<span class="bento-icon">📈</span>
 				<span class="bento-label">{$t('bento_chart_title')}</span>
 				<a href="/analytics" class="bento-view-all">{$t('bento_view_all')}</a>
 			</div>
 			<div class="bento-card-body chart-body">
-				{#if $inventory.length > 0}
+				{#if ($preset === 'flowers' && $flowerSorts.length > 0) || $inventory.length > 0}
 					<canvas bind:this={chartCanvas} class="mini-chart"></canvas>
-					<p class="chart-hint">Выручка по товарам</p>
+					<p class="chart-hint">{$preset === 'flowers' ? 'Стоимость по сортам' : 'Выручка по товарам'}</p>
 				{:else}
 					<p class="bento-empty">{$t('empty_no_items')}</p>
 				{/if}
@@ -355,7 +472,8 @@
 
 		<!-- ── RECENT ACTIVITY ────────────────────────────────── -->
 		{#if visibleWidgets.has('activity')}
-		<div class="bento-card bento-activity">
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="bento-card bento-activity" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-activity">
 				<span class="bento-icon">🕐</span>
 				<span class="bento-label">{$t('bento_activity_title')}</span>
@@ -449,23 +567,25 @@
 		gap: 16px;
 	}
 
-	/* Grid placement — row 1: sync(4) + orders(3) + inventory(5) = 12 */
-	.bento-sync      { grid-column: span 4; }
-	.bento-orders    { grid-column: span 3; }
-	.bento-inventory { grid-column: span 5; }
-	/* row 2: chart(8) + activity(4) = 12 */
-	.bento-chart-wide { grid-column: span 8; }
-	.bento-activity  { grid-column: span 4; }
+	/* Grid placement — row 1: sync(4) + orders(4) + greenhouse(4) = 12 */
+	.bento-sync       { grid-column: span 4; }
+	.bento-orders     { grid-column: span 4; }
+	.bento-greenhouse { grid-column: span 4; }
+	/* row 2: inventory(5) + chart(7) = 12 */
+	.bento-inventory  { grid-column: span 5; }
+	.bento-chart-wide { grid-column: span 7; }
+	/* row 3: activity(12) */
+	.bento-activity   { grid-column: span 12; }
 
 	@media (max-width: 1024px) {
-		.bento-sync, .bento-orders, .bento-inventory,
+		.bento-sync, .bento-orders, .bento-greenhouse, .bento-inventory,
 		.bento-chart-wide, .bento-activity {
 			grid-column: span 6;
 		}
 	}
 
 	@media (max-width: 640px) {
-		.bento-sync, .bento-orders, .bento-inventory,
+		.bento-sync, .bento-orders, .bento-greenhouse, .bento-inventory,
 		.bento-chart-wide, .bento-activity {
 			grid-column: span 12;
 		}
@@ -484,6 +604,31 @@
 		display: flex;
 		flex-direction: column;
 		transition: transform 0.25s var(--ease-spring), box-shadow 0.25s var(--ease-spring);
+		position: relative;
+	}
+
+	/* Cursor-following glow — «живые плитки» */
+	.bento-card::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		background: radial-gradient(
+			circle 150px at var(--glow-x, -200px) var(--glow-y, -200px),
+			rgba(255, 255, 255, 0.06),
+			transparent 70%
+		);
+		pointer-events: none;
+		z-index: 1;
+		transition: opacity 0.3s;
+	}
+
+	:global([data-theme="light"]) .bento-card::before {
+		background: radial-gradient(
+			circle 150px at var(--glow-x, -200px) var(--glow-y, -200px),
+			rgba(0, 0, 0, 0.04),
+			transparent 70%
+		);
 	}
 
 	.bento-card:hover {
@@ -501,11 +646,12 @@
 	}
 
 	/* Accent left-border colors per block */
-	.accent-sync     { border-left: 3px solid #60a5fa; }
-	.accent-orders   { border-left: 3px solid #fbbf24; }
-	.accent-inventory { border-left: 3px solid var(--color-primary); }
-	.accent-chart    { border-left: 3px solid var(--color-secondary); }
-	.accent-activity { border-left: 3px solid var(--color-tertiary); }
+	.accent-sync       { border-left: 3px solid #60a5fa; }
+	.accent-orders     { border-left: 3px solid #fbbf24; }
+	.accent-greenhouse { border-left: 3px solid #10b981; }
+	.accent-inventory  { border-left: 3px solid var(--color-primary); }
+	.accent-chart      { border-left: 3px solid var(--color-secondary); }
+	.accent-activity   { border-left: 3px solid var(--color-tertiary); }
 
 	.bento-icon { font-size: 1rem; }
 
@@ -883,5 +1029,127 @@
 	.widget-toggle input[type="checkbox"] {
 		accent-color: var(--color-primary);
 		cursor: pointer;
+	}
+
+	/* ── Greenhouse widget ── */
+	.gh-kpi-grid {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 8px;
+	}
+
+	.gh-kpi {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.gh-kpi-val {
+		font-size: 1.4rem;
+		font-weight: 700;
+		color: var(--color-primary);
+		line-height: 1;
+	}
+
+	.gh-kpi-lbl {
+		font-size: 0.68rem;
+		color: var(--color-outline);
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.gh-mini-chart {
+		height: 64px;
+		border-radius: 8px;
+		overflow: hidden;
+		margin-top: 2px;
+	}
+
+	.gh-recent-label {
+		font-size: 0.72rem;
+		font-weight: 600;
+		color: var(--color-outline);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-top: 4px;
+	}
+
+	.gh-recent-list {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.gh-recent-card {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 8px 10px;
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.03);
+		border-left: 3px solid var(--color-primary);
+		transition: background 0.15s;
+	}
+
+	.gh-recent-card:hover {
+		background: rgba(255, 255, 255, 0.06);
+	}
+
+	.gh-recent-photo {
+		width: 36px;
+		height: 36px;
+		border-radius: 8px;
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+
+	.gh-recent-placeholder {
+		width: 36px;
+		height: 36px;
+		border-radius: 8px;
+		background: rgba(255, 255, 255, 0.04);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		opacity: 0.5;
+	}
+
+	.gh-recent-info {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+
+	.gh-recent-name {
+		font-size: 0.82rem;
+		font-weight: 600;
+		color: var(--color-on-surface);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.gh-recent-variety {
+		font-size: 0.7rem;
+		color: var(--color-outline);
+	}
+
+	.gh-recent-price {
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: var(--color-primary);
+	}
+
+	.gh-recent-stats {
+		display: flex;
+		gap: 8px;
+		font-size: 0.75rem;
+		color: var(--color-on-surface);
+		opacity: 0.7;
+		flex-shrink: 0;
 	}
 </style>

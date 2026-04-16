@@ -106,6 +106,14 @@
 
 	const sq = $derived(searchQuery.toLowerCase().trim());
 
+	// Packaging history aggregated by sort_id (actual packed count, not current stock)
+	const packBySort = $derived(
+		packagingLog.reduce((acc, e) => {
+			acc[e.sort_id] = (acc[e.sort_id] ?? 0) + e.pack_count;
+			return acc;
+		}, {} as Record<string, number>)
+	);
+
 	let categoryStats = $derived.by(() => {
 		let entries: [string, { count: number; stock: number; revenue: number; sold: number }][];
 
@@ -114,10 +122,11 @@
 			const map: Record<string, { count: number; stock: number; revenue: number; sold: number }> = {};
 			for (const s of $flowerSorts) {
 				if (!map[s.name]) map[s.name] = { count: 0, stock: 0, revenue: 0, sold: 0 };
+				const fpp = s.flowers_per_pack_override ?? c.flowers_per_pack;
 				map[s.name].count++;
 				map[s.name].stock += s.raw_stock + s.pkg_stock;
-				map[s.name].revenue += s.pkg_stock * c.price_per_pack + s.raw_stock * s.sell_price_stem;
-				map[s.name].sold += s.pkg_stock;
+				map[s.name].revenue += s.pkg_stock * fpp * s.sell_price_stem + s.raw_stock * s.sell_price_stem;
+				map[s.name].sold += packBySort[s.id] ?? 0;
 			}
 			entries = Object.entries(map);
 		} else {
@@ -149,12 +158,16 @@
 		if ($preset === 'flowers' && $flowerSorts.length > 0) {
 			const c = $flowerConstants;
 			let items = [...$flowerSorts]
-				.map(s => ({
-					name: `${s.name}${s.variety ? ' — ' + s.variety : ''}`,
-					category: s.name,
-					sold_count: s.pkg_stock,
-					revenue: s.pkg_stock * c.price_per_pack,
-				}))
+				.map(s => {
+					const fpp = s.flowers_per_pack_override ?? c.flowers_per_pack;
+					const sold = packBySort[s.id] ?? 0;
+					return {
+						name: `${s.name}${s.variety ? ' — ' + s.variety : ''}`,
+						category: s.name,
+						sold_count: sold,
+						revenue: sold * fpp * s.sell_price_stem,
+					};
+				})
 				.sort((a, b) => b.sold_count - a.sold_count)
 				.slice(0, 20);
 			if (sq) items = items.filter(i => i.name.toLowerCase().includes(sq) || i.category.toLowerCase().includes(sq));
@@ -1071,7 +1084,7 @@
 	/* ── Chart cards ── */
 	.chart-card {
 		background: var(--glass-bg); border: 1px solid var(--glass-border);
-		border-radius: 14px; padding: 16px;
+		border-radius: 14px; padding: 16px; overflow: hidden;
 	}
 	.chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 	.chart-title { font-size: 0.88rem; font-weight: 600; color: var(--color-on-surface); }
@@ -1116,7 +1129,7 @@
 	.summary-metric.primary .summary-metric-val { color: var(--color-primary); }
 	.summary-metric-val { font-size: 1.3rem; font-weight: 700; color: var(--color-on-surface); line-height: 1; }
 	.summary-metric-label { font-size: 0.68rem; color: var(--color-outline); }
-	.summary-mini-chart { height: 80px; overflow: hidden; }
+	.summary-mini-chart { height: 100px; overflow: hidden; border-radius: 8px; }
 	.summary-status-row { display: flex; gap: 6px; flex-wrap: wrap; }
 	.status-pill {
 		font-size: 0.7rem; padding: 3px 8px;
@@ -1166,15 +1179,9 @@
 		margin-bottom: 32px;
 	}
 
-	.chart-card {
-		background: var(--color-surface-container);
-		border: 1px solid var(--color-outline-variant);
-		border-radius: 12px;
-		padding: 16px;
-	}
-
 	.chart-canvas {
 		display: block;
+		max-width: 100%;
 	}
 
 	.section { margin-bottom: 32px; }

@@ -157,6 +157,15 @@
 		text-decoration: none;
 	}
 
+	/* Responsive dock sizing */
+	@media (min-width: 1600px) and (max-width: 2399px) {
+		.dock-item { width: 52px; height: 52px; border-radius: 13px; }
+	}
+
+	@media (min-width: 2400px) {
+		.dock-item { width: 58px; height: 58px; border-radius: 14px; }
+	}
+
 	.dock-item::before {
 		content: '';
 		position: absolute;

@@ -157,17 +157,26 @@ export const flowerFinancials = derived(
 	([$sorts, $c]) => {
 		const totalRaw = $sorts.reduce((sum, s) => sum + s.raw_stock, 0);
 		const totalPkg = $sorts.reduce((sum, s) => sum + s.pkg_stock, 0);
-		const packValue = totalPkg * $c.price_per_pack;
-		const rawValue = totalRaw * $c.price_per_flower;
 		const totalWeight = totalRaw * $c.weight_per_flower;
 		const potentialPacks = $c.flowers_per_pack > 0
 			? Math.floor(totalRaw / $c.flowers_per_pack)
 			: 0;
-		// ERP: total purchase cost (sum of raw_stock * purchase_price per sort)
-		const totalPurchaseValue = $sorts.reduce(
-			(sum, s) => sum + s.raw_stock * (s.purchase_price ?? 0),
-			0
-		);
+
+		// Per-sort value calculation:
+		// Each pack contains (flowers_per_pack_override ?? global flowers_per_pack) stems.
+		// Pack value = pkg_stock * fpp * sell_price_stem
+		// Raw value = raw_stock * sell_price_stem
+		let packValue = 0;
+		let rawValue = 0;
+		let totalPurchaseValue = 0;
+
+		for (const s of $sorts) {
+			const fpp = s.flowers_per_pack_override ?? $c.flowers_per_pack;
+			packValue += s.pkg_stock * fpp * s.sell_price_stem;
+			rawValue += s.raw_stock * s.sell_price_stem;
+			totalPurchaseValue += s.raw_stock * (s.purchase_price ?? 0)
+				+ s.pkg_stock * fpp * (s.purchase_price ?? 0);
+		}
 
 		return {
 			totalRaw,

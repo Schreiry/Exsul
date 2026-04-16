@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { convertFileSrc } from '@tauri-apps/api/core';
 	import type { FlowerSort } from '$lib/tauri/types';
+	import { globalCurrency, formatAmount } from '$lib/stores/currency';
 
 	interface Props {
 		sort: FlowerSort;
@@ -74,6 +75,9 @@
 			<span class="stock-num">{sort.raw_stock}</span>
 			<span class="stock-unit"> шт.</span>
 		</p>
+		{#if sort.sell_price_stem > 0}
+			<p class="card-price">{formatAmount(sort.sell_price_stem, $globalCurrency)}/шт.</p>
+		{/if}
 	</div>
 </button>
 
@@ -194,5 +198,13 @@
 	.stock-unit {
 		font-size: 0.75rem;
 		color: var(--color-outline);
+	}
+
+	.card-price {
+		margin: 2px 0 0;
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--color-primary);
+		opacity: 0.85;
 	}
 </style>

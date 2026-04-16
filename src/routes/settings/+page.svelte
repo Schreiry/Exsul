@@ -7,7 +7,9 @@
 	import { categories } from '$lib/stores/categories';
 	import { flowerConstants } from '$lib/stores/flowers';
 	import { commands } from '$lib/tauri/commands';
-	import { globalCurrency, CURRENCIES } from '$lib/stores/currency';
+	import { globalCurrency, CURRENCIES, findCurrency } from '$lib/stores/currency';
+
+	const selectedCurrency = $derived(findCurrency($globalCurrency));
 	import GlassDropdown from '$lib/components/common/GlassDropdown.svelte';
 	import type { AppPreset, PricingMode } from '$lib/tauri/types';
 
@@ -253,7 +255,7 @@
 	</section>
 
 	<!-- ── Currency ──────────────────────────────────────────── -->
-	<section class="section">
+	<section class="section section-dropdown" style="z-index: 12">
 		<h2>{$t('label_currency')}</h2>
 		<p class="hint">{$t('hint_currency')}</p>
 		<GlassDropdown
@@ -261,10 +263,13 @@
 			bind:value={$globalCurrency}
 			placeholder="— Currency —"
 		/>
+		{#if selectedCurrency.code !== 'USD'}
+			<p class="currency-rate-hint">≈ 1 {selectedCurrency.code} = {selectedCurrency.rateToUsd < 0.01 ? selectedCurrency.rateToUsd.toFixed(6) : selectedCurrency.rateToUsd.toFixed(2)} USD</p>
+		{/if}
 	</section>
 
 	<!-- ── Language ───────────────────────────────────────────── -->
-	<section class="section">
+	<section class="section section-dropdown" style="z-index: 11">
 		<h2>{$t('label_language')}</h2>
 		<GlassDropdown
 			items={[{ value: 'ru', label: 'Русский' }, { value: 'en', label: 'English' }]}
@@ -381,6 +386,8 @@
 		margin-bottom: 16px;
 		backdrop-filter: var(--glass-blur);
 		-webkit-backdrop-filter: var(--glass-blur);
+		overflow: visible;
+		position: relative;
 	}
 
 	/* ── Business preset cards ─── */
@@ -568,6 +575,14 @@
 		background: linear-gradient(135deg, #2a2a2a 0%, #0a0a0a 100%) !important;
 	}
 	.swatch-mono.active { border-color: var(--color-on-surface); }
+
+	/* ── Currency rate hint ───── */
+	.currency-rate-hint {
+		font-size: 0.75rem;
+		color: var(--color-outline);
+		margin: 8px 0 0;
+		font-style: italic;
+	}
 
 	/* ── Language ─────────────── */
 

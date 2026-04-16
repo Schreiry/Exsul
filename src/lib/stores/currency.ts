@@ -6,23 +6,25 @@ export interface CurrencyDef {
 	symbol: string;
 	name: string;
 	locale: string;
+	/** Approximate exchange rate: 1 unit of this currency = rateToUsd USD */
+	rateToUsd: number;
 }
 
 export const CURRENCIES: CurrencyDef[] = [
-	{ code: 'USD', symbol: '$',    name: 'US Dollar',          locale: 'en-US' },
-	{ code: 'EUR', symbol: '€',    name: 'Euro',               locale: 'de-DE' },
-	{ code: 'GEL', symbol: '₾',    name: 'Georgian Lari',      locale: 'ka-GE' },
-	{ code: 'GBP', symbol: '£',    name: 'British Pound',      locale: 'en-GB' },
-	{ code: 'AED', symbol: 'د.إ',  name: 'UAE Dirham',         locale: 'ar-AE' },
-	{ code: 'TRY', symbol: '₺',    name: 'Turkish Lira',       locale: 'tr-TR' },
-	{ code: 'UAH', symbol: '₴',    name: 'Ukrainian Hryvnia',  locale: 'uk-UA' },
-	{ code: 'KZT', symbol: '₸',    name: 'Kazakhstani Tenge',  locale: 'kk-KZ' },
-	{ code: 'UZS', symbol: 'сўм',  name: 'Uzbekistani Sum',    locale: 'uz-UZ' },
-	{ code: 'CNY', symbol: '¥',    name: 'Chinese Yuan',       locale: 'zh-CN' },
-	{ code: 'JPY', symbol: '¥',    name: 'Japanese Yen',       locale: 'ja-JP' },
-	{ code: 'CHF', symbol: 'Fr',   name: 'Swiss Franc',        locale: 'de-CH' },
-	{ code: 'CAD', symbol: 'C$',   name: 'Canadian Dollar',    locale: 'en-CA' },
-	{ code: 'AUD', symbol: 'A$',   name: 'Australian Dollar',  locale: 'en-AU' },
+	{ code: 'USD', symbol: '$',    name: 'US Dollar',          locale: 'en-US', rateToUsd: 1.0 },
+	{ code: 'EUR', symbol: '€',    name: 'Euro',               locale: 'de-DE', rateToUsd: 1.09 },
+	{ code: 'GEL', symbol: '₾',    name: 'Georgian Lari',      locale: 'ka-GE', rateToUsd: 0.37 },
+	{ code: 'GBP', symbol: '£',    name: 'British Pound',      locale: 'en-GB', rateToUsd: 1.26 },
+	{ code: 'AED', symbol: 'د.إ',  name: 'UAE Dirham',         locale: 'ar-AE', rateToUsd: 0.27 },
+	{ code: 'TRY', symbol: '₺',    name: 'Turkish Lira',       locale: 'tr-TR', rateToUsd: 0.031 },
+	{ code: 'UAH', symbol: '₴',    name: 'Ukrainian Hryvnia',  locale: 'uk-UA', rateToUsd: 0.024 },
+	{ code: 'KZT', symbol: '₸',    name: 'Kazakhstani Tenge',  locale: 'kk-KZ', rateToUsd: 0.002 },
+	{ code: 'UZS', symbol: 'сўм',  name: 'Uzbekistani Sum',    locale: 'uz-UZ', rateToUsd: 0.000078 },
+	{ code: 'CNY', symbol: '¥',    name: 'Chinese Yuan',       locale: 'zh-CN', rateToUsd: 0.14 },
+	{ code: 'JPY', symbol: '¥',    name: 'Japanese Yen',       locale: 'ja-JP', rateToUsd: 0.0067 },
+	{ code: 'CHF', symbol: 'Fr',   name: 'Swiss Franc',        locale: 'de-CH', rateToUsd: 1.12 },
+	{ code: 'CAD', symbol: 'C$',   name: 'Canadian Dollar',    locale: 'en-CA', rateToUsd: 0.73 },
+	{ code: 'AUD', symbol: 'A$',   name: 'Australian Dollar',  locale: 'en-AU', rateToUsd: 0.65 },
 ];
 
 export function findCurrency(code: string): CurrencyDef {
@@ -44,6 +46,18 @@ export function formatAmount(value: number, currencyCode: string): string {
 	} catch {
 		return `${def.symbol}${value.toFixed(2)}`;
 	}
+}
+
+/**
+ * Convert an amount from one currency to another using approximate USD rates.
+ * Rates are static approximations — not live market data.
+ */
+export function convertAmount(amount: number, fromCode: string, toCode: string): number {
+	if (fromCode === toCode) return amount;
+	const from = findCurrency(fromCode);
+	const to = findCurrency(toCode);
+	const usd = amount * from.rateToUsd;
+	return to.rateToUsd > 0 ? usd / to.rateToUsd : usd;
 }
 
 // ── Global currency preference ────────────────────────────────────────────────
