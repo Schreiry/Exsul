@@ -6,6 +6,7 @@
 	import { preset } from '$lib/stores/preset';
 	import { commands } from '$lib/tauri/commands';
 	import { inventory } from '$lib/stores/inventory';
+	import { showDetailedPricing } from '$lib/stores/appSettings';
 
 	interface Props {
 		item: Item;
@@ -178,13 +179,13 @@
 			<span class="mlabel">{$t('table_header_revenue')}</span>
 			<span class="mvalue color-revenue">{fmt(item.revenue)}</span>
 		</div>
-		{#if margin !== null}
+		{#if margin !== null && $showDetailedPricing}
 			<div class="metric">
 				<span class="mlabel">{$t('label_margin')}</span>
 				<span class="mvalue color-margin">{margin.toFixed(1)}%</span>
 			</div>
 		{/if}
-		{#if item.production_cost > 0}
+		{#if item.production_cost > 0 && $showDetailedPricing}
 			<div class="metric">
 				<span class="mlabel">{$t('label_cost')}</span>
 				<span class="mvalue color-cost">{fmt(item.production_cost)}</span>

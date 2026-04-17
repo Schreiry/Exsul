@@ -1,10 +1,17 @@
 <script lang="ts">
 	import FlowerCard from '$lib/components/greenhouse/FlowerCard.svelte';
+	import { flowerConstants } from '$lib/stores/flowers';
 	import type { FlowerSort } from '$lib/tauri/types';
 
 	interface Props {
 		flowerSorts: FlowerSort[];
-		onconfirm: (item: { item_id: string; quantity: number; unit_price: number }) => void;
+		onconfirm: (item: {
+			item_id: string;
+			quantity: number;
+			unit_price: number;
+			pack_count: number;
+			stems_per_pack: number;
+		}) => void;
 		onclose: () => void;
 	}
 
@@ -23,10 +30,17 @@
 		})
 	);
 
-	const unitPrice = $derived(selectedSort?.sell_price_stem ?? 0);
-	const totalPrice = $derived(quantity * unitPrice);
+	// Stems per pack (sort override or global constant)
+	const stemsPerPack = $derived(
+		selectedSort?.flowers_per_pack_override ?? $flowerConstants.flowers_per_pack
+	);
+	// Price for ONE PACK (not per stem)
+	const pricePerStem = $derived(selectedSort?.sell_price_stem ?? 0);
+	const pricePerPack = $derived(pricePerStem * stemsPerPack);
+	const totalPrice = $derived(quantity * pricePerPack);
 	const maxQty = $derived(selectedSort?.pkg_stock ?? 0);
 	const isOverStock = $derived(quantity > maxQty);
+	const hasPriceWarning = $derived(!!selectedSort && pricePerStem === 0);
 
 	function handleSelect(sort: FlowerSort) {
 		selectedSort = sort;
@@ -38,7 +52,9 @@
 		onconfirm({
 			item_id: selectedSort.id,
 			quantity,
-			unit_price: unitPrice,
+			unit_price: pricePerPack,
+			pack_count: quantity,
+			stems_per_pack: stemsPerPack,
 		});
 	}
 
@@ -106,7 +122,9 @@
 						</div>
 
 						<div class="price-info">
-							<span class="price-unit">{unitPrice.toFixed(2)} / уп.</span>
+							<span class="price-breakdown">
+								{pricePerStem.toFixed(2)}/шт. × {stemsPerPack} шт. = {pricePerPack.toFixed(2)}/уп.
+							</span>
 							<span class="price-total">= {totalPrice.toFixed(2)}</span>
 						</div>
 
@@ -119,6 +137,12 @@
 							Добавить
 						</button>
 					</div>
+
+					{#if hasPriceWarning}
+						<div class="price-warning">
+							<span>&#9888;</span> Цена за стебель не указана — итого будет 0
+						</div>
+					{/if}
 
 					{#if isOverStock}
 						<div class="stock-warning">
@@ -333,8 +357,8 @@
 		margin-left: auto;
 	}
 
-	.price-unit {
-		font-size: 0.8rem;
+	.price-breakdown {
+		font-size: 0.78rem;
 		color: var(--color-outline);
 	}
 
@@ -367,6 +391,19 @@
 		color: var(--color-alert-red, #ef4444);
 		background: rgba(239, 68, 68, 0.08);
 		border: 1px solid var(--color-alert-red, #ef4444);
+		border-radius: 8px;
+		padding: 6px 10px;
+	}
+
+	.price-warning {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: #eab308;
+		background: rgba(234, 179, 8, 0.10);
+		border: 1px solid rgba(234, 179, 8, 0.6);
 		border-radius: 8px;
 		padding: 6px 10px;
 	}

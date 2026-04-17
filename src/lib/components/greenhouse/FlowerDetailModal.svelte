@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { convertFileSrc } from '@tauri-apps/api/core';
 	import { flowerSorts } from '$lib/stores/flowers';
+	import { showDetailedPricing } from '$lib/stores/appSettings';
 	import type { FlowerSort, HarvestLogEntry } from '$lib/tauri/types';
 
 	interface Props {
@@ -18,7 +19,10 @@
 	let editPurchasePrice = $state(sort.purchase_price);
 	let editSellPrice = $state(sort.sell_price_stem);
 	let editFpp = $state<number | null>(sort.flowers_per_pack_override ?? null);
+	let editColorHex = $state<string | null>(sort.color_hex ?? null);
 	let editSaving = $state(false);
+
+	const PRESET_COLORS = ['#f472b6','#fb923c','#facc15','#4ade80','#34d399','#22d3ee','#60a5fa','#a78bfa','#e879f9','#94a3b8','#f87171','#ffffff'];
 
 	// Harvest log
 	let harvestLog = $state<HarvestLogEntry[]>([]);
@@ -69,6 +73,7 @@
 				purchase_price: editPurchasePrice,
 				sell_price_stem: editSellPrice,
 				flowers_per_pack_override: editFpp ?? undefined,
+				color_hex: editColorHex || undefined,
 			});
 			editing = false;
 		} finally {
@@ -179,7 +184,7 @@
 						<p class="info-desc">{sort.description}</p>
 					{/if}
 					<div class="info-prices">
-						{#if sort.purchase_price > 0}
+						{#if sort.purchase_price > 0 && $showDetailedPricing}
 							<span class="price-chip">Закупка: {sort.purchase_price}</span>
 						{/if}
 						{#if sort.sell_price_stem > 0}
@@ -215,6 +220,29 @@
 					<div class="field">
 						<label class="field-label">Цветков в упаковке</label>
 						<input class="field-input" type="number" bind:value={editFpp} min="1" placeholder="по умолч." />
+					</div>
+					<div class="field">
+						<span class="field-label">Цвет карточки</span>
+						<div class="color-swatches">
+							{#each PRESET_COLORS as c}
+								<button
+									type="button"
+									class="color-swatch"
+									class:active={editColorHex === c}
+									style:background={c}
+									onclick={() => (editColorHex = editColorHex === c ? null : c)}
+									aria-label="Цвет {c}"
+								></button>
+							{/each}
+							<label class="color-custom" title="Свой цвет">
+								<input
+									type="color"
+									value={editColorHex ?? '#6b7280'}
+									oninput={(e) => (editColorHex = e.currentTarget.value)}
+								/>
+								<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 3v1m0 16v1m8.66-13.66l-.71.71M4.05 19.95l-.71.71M21 12h-1M4 12H3m16.66 7.66l-.71-.71M4.05 4.05l-.71-.71"/></svg>
+							</label>
+						</div>
 					</div>
 					<div class="edit-actions">
 						<button type="button" class="btn-secondary" onclick={() => (editing = false)}>Отмена</button>
@@ -516,6 +544,52 @@
 		padding: 8px 14px; font-size: 0.88rem; cursor: pointer;
 	}
 	.btn-secondary:hover { background: var(--glass-bg-hover); }
+
+	/* Color swatches */
+	.color-swatches {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 5px;
+		align-items: center;
+	}
+	.color-swatch {
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		border: 2px solid transparent;
+		cursor: pointer;
+		transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+		padding: 0;
+	}
+	.color-swatch:hover { transform: scale(1.18); }
+	.color-swatch.active {
+		border-color: var(--color-on-surface);
+		box-shadow: 0 0 0 2px var(--color-surface), 0 0 8px currentColor;
+	}
+	.color-custom {
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		border: 1.5px dashed var(--color-outline);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		position: relative;
+		overflow: hidden;
+		color: var(--color-outline);
+	}
+	.color-custom:hover { border-color: var(--color-primary); }
+	.color-custom input[type="color"] {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		opacity: 0;
+		cursor: pointer;
+		border: none;
+		padding: 0;
+	}
 
 	/* Light mode */
 	:global([data-theme="light"]) .modal-panel { background: var(--color-surface, #fafafa); }

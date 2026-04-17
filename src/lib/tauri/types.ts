@@ -144,6 +144,8 @@ export interface OrderItem {
 	unit_price: number;
 	specifications: Record<string, unknown>;
 	created_at: string;
+	pack_count?: number;
+	stems_per_pack?: number;
 }
 
 export interface CreateOrderPayload {
@@ -160,6 +162,8 @@ export interface AddOrderItemPayload {
 	quantity: number;
 	unit_price: number;
 	specifications?: Record<string, unknown>;
+	pack_count?: number;
+	stems_per_pack?: number;
 }
 
 // ============================================================

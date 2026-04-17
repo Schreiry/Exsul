@@ -1,22 +1,26 @@
 <script lang="ts">
 	import { orders } from '$lib/stores/orders';
 	import { inventory } from '$lib/stores/inventory';
-	import { flowerSorts } from '$lib/stores/flowers';
+	import { flowerSorts, flowerConstants } from '$lib/stores/flowers';
 	import { preset } from '$lib/stores/preset';
 	import { t } from '$lib/stores/i18n';
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
 	import { commands } from '$lib/tauri/commands';
+	import { printSingleOrder, printAllOrders } from '$lib/utils/print';
 	import OrderProgressBar from '$lib/components/orders/OrderProgressBar.svelte';
 	import OrderDetailModal from '$lib/components/orders/OrderDetailModal.svelte';
 	import AddItemModal from '$lib/components/orders/AddItemModal.svelte';
 	import { formatCountdown } from '$lib/utils/countdown';
-	import type { CreateOrderPayload, AddOrderItemPayload, OrderStatus, OrderItem, Order } from '$lib/tauri/types';
+	import type { CreateOrderPayload, AddOrderItemPayload, OrderStatus, Order } from '$lib/tauri/types';
 
 	const isFlowers = $derived($preset === 'flowers');
 
 	$effect(() => {
 		orders.load();
-		if (isFlowers) flowerSorts.load();
+		if (isFlowers) {
+			flowerSorts.load();
+			flowerConstants.load();
+		}
 	});
 
 	type FilterTab = 'all' | OrderStatus;
@@ -77,7 +81,13 @@
 		return map;
 	});
 
-	function handleAddItem(item: { item_id: string; quantity: number; unit_price: number }) {
+	function handleAddItem(item: {
+		item_id: string;
+		quantity: number;
+		unit_price: number;
+		pack_count: number;
+		stems_per_pack: number;
+	}) {
 		pendingItems = [...pendingItems, item];
 		showAddItem = false;
 	}
@@ -113,35 +123,19 @@
 
 	async function printPreorder(order: typeof filteredOrders[0]) {
 		const items = await orders.getItems(order.id);
-		const el = document.createElement('div');
-		el.className = 'print-preorder';
+		printSingleOrder(order, items, $flowerSorts, $inventory, $flowerConstants, $globalCurrency, $t);
+	}
 
-		const itemRows = items.map((it: OrderItem) => {
-			const name = isFlowers
-				? ($flowerSorts.find(s => s.id === it.item_id)?.name ?? it.item_id)
-				: ($inventory.find(inv => inv.id === it.item_id)?.name ?? it.item_id);
-			const lineTotal = it.quantity * it.unit_price;
-			return `<tr><td>${name}</td><td>${it.quantity}</td><td>${formatAmount(it.unit_price, $globalCurrency)}</td><td>${formatAmount(lineTotal, $globalCurrency)}</td></tr>`;
-		}).join('');
-
-		el.innerHTML = `
-			<h1>${$t('action_print_preorder')}</h1>
-			<p><strong>${$t('label_customer_name')}:</strong> ${order.customer_name}</p>
-			${order.customer_phone ? `<p><strong>${$t('label_customer_phone')}:</strong> ${order.customer_phone}</p>` : ''}
-			${order.customer_email ? `<p><strong>${$t('label_customer_email')}:</strong> ${order.customer_email}</p>` : ''}
-			${order.delivery_address ? `<p><strong>Адрес:</strong> ${order.delivery_address}</p>` : ''}
-			${order.deadline ? `<p><strong>${$t('label_deadline')}:</strong> ${new Date(order.deadline).toLocaleString()}</p>` : ''}
-			<table>
-				<thead><tr><th>${$t('label_name')}</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
-				<tbody>${itemRows}</tbody>
-			</table>
-			<p class="grand-total"><strong>Total: ${formatAmount(order.total_amount, $globalCurrency)}</strong></p>
-			${order.notes ? `<p><em>${order.notes}</em></p>` : ''}
-		`;
-
-		document.body.appendChild(el);
-		window.print();
-		document.body.removeChild(el);
+	async function handlePrintAll() {
+		await printAllOrders(
+			filteredOrders,
+			(id) => orders.getItems(id),
+			$flowerSorts,
+			$inventory,
+			$flowerConstants,
+			$globalCurrency,
+			$t
+		);
 	}
 
 	const tabs: { key: FilterTab; label: string }[] = [
@@ -156,9 +150,25 @@
 <div class="page">
 	<div class="page-header">
 		<h1>{$t('page_orders_title')}</h1>
-		<button class="btn-primary" onclick={() => (showForm = !showForm)}>
-			{showForm ? $t('action_cancel') : $t('action_create_order')}
-		</button>
+		<div class="page-header-actions">
+			<button
+				class="btn-secondary print-all-btn"
+				onclick={handlePrintAll}
+				disabled={filteredOrders.length === 0}
+				title={$t('action_print_all_orders')}
+				aria-label={$t('action_print_all_orders')}
+			>
+				<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<polyline points="6 9 6 2 18 2 18 9"/>
+					<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+					<rect x="6" y="14" width="12" height="8"/>
+				</svg>
+				<span>{$t('action_print_all_orders')}</span>
+			</button>
+			<button class="btn-primary" onclick={() => (showForm = !showForm)}>
+				{showForm ? $t('action_cancel') : $t('action_create_order')}
+			</button>
+		</div>
 	</div>
 
 	{#if showForm}
@@ -336,6 +346,23 @@
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 24px;
+		gap: 12px;
+	}
+
+	.page-header-actions {
+		display: flex;
+		gap: 10px;
+		align-items: center;
+	}
+
+	.print-all-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.print-all-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
 	}
 
 	h1 {
@@ -674,6 +701,20 @@
 	.btn-primary:hover { opacity: 0.85; }
 	.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
+	.btn-secondary {
+		background: var(--color-surface-container-high, var(--glass-bg));
+		color: var(--color-on-surface);
+		border: 1px solid var(--color-outline-variant, var(--glass-border));
+		border-radius: 8px;
+		padding: 10px 16px;
+		font-size: 0.875rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: opacity 0.15s, background 0.15s;
+	}
+	.btn-secondary:hover { background: var(--color-surface-container); }
+	.btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
 	.btn-ghost {
 		background: none;
 		border: none;
@@ -724,28 +765,5 @@
 
 	@media (max-width: 600px) {
 		.form-grid { grid-template-columns: 1fr; }
-	}
-
-	/* Print styles */
-	@media print {
-		.page, .tabs, .order-list, .page-header, .form-card { display: none !important; }
-		:global(.dock-container), :global(.logo-watermark), :global(.sync-indicator) { display: none !important; }
-
-		:global(.print-preorder) {
-			display: block !important;
-			position: fixed;
-			inset: 0;
-			background: white;
-			color: black;
-			padding: 40px;
-			font-family: serif;
-			font-size: 14px;
-			z-index: 99999;
-		}
-		:global(.print-preorder h1) { font-size: 20px; margin-bottom: 16px; }
-		:global(.print-preorder table) { width: 100%; border-collapse: collapse; margin: 16px 0; }
-		:global(.print-preorder th),
-		:global(.print-preorder td) { border: 1px solid #333; padding: 6px 10px; text-align: left; }
-		:global(.print-preorder .grand-total) { font-size: 16px; margin-top: 12px; }
 	}
 </style>

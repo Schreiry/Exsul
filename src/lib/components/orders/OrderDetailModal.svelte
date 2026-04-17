@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { orders } from '$lib/stores/orders';
-	import { flowerSorts } from '$lib/stores/flowers';
+	import { flowerSorts, flowerConstants } from '$lib/stores/flowers';
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
 	import { preset } from '$lib/stores/preset';
 	import { inventory } from '$lib/stores/inventory';
+	import { t } from '$lib/stores/i18n';
 	import { formatCountdown } from '$lib/utils/countdown';
+	import { printSingleOrder } from '$lib/utils/print';
 	import OrderProgressBar from './OrderProgressBar.svelte';
 	import FlowerCard from '$lib/components/greenhouse/FlowerCard.svelte';
 	import type { Order, OrderItem, FlowerSort } from '$lib/tauri/types';
@@ -22,6 +24,7 @@
 
 	$effect(() => {
 		orders.getItems(order.id).then((items) => (orderItems = items));
+		if ($preset === 'flowers') flowerConstants.load();
 
 		if (order.deadline) {
 			function tick() { countdown = formatCountdown(order.deadline!); }
@@ -52,32 +55,15 @@
 	}
 
 	async function printPreorder() {
-		const el = document.createElement('div');
-		el.className = 'print-preorder';
-		const itemRows = orderItems.map((it) => {
-			const name = $preset === 'flowers'
-				? ($flowerSorts.find(s => s.id === it.item_id)?.name ?? it.item_id)
-				: ($inventory.find(inv => inv.id === it.item_id)?.name ?? it.item_id);
-			return `<tr><td>${name}</td><td>${it.quantity}</td><td>${formatAmount(it.unit_price, $globalCurrency)}</td><td>${formatAmount(it.quantity * it.unit_price, $globalCurrency)}</td></tr>`;
-		}).join('');
-
-		el.innerHTML = `
-			<h1>Предзаказ</h1>
-			<p><strong>Клиент:</strong> ${order.customer_name}</p>
-			${order.customer_phone ? `<p><strong>Телефон:</strong> ${order.customer_phone}</p>` : ''}
-			${order.customer_email ? `<p><strong>Email:</strong> ${order.customer_email}</p>` : ''}
-			${order.delivery_address ? `<p><strong>Адрес:</strong> ${order.delivery_address}</p>` : ''}
-			${order.deadline ? `<p><strong>Срок:</strong> ${new Date(order.deadline).toLocaleString('ru')}</p>` : ''}
-			<table border="1" cellpadding="6" style="border-collapse:collapse;width:100%">
-				<thead><tr><th>Позиция</th><th>Кол-во</th><th>Цена</th><th>Итого</th></tr></thead>
-				<tbody>${itemRows}</tbody>
-			</table>
-			<p><strong>Сумма: ${formatAmount(order.total_amount, $globalCurrency)}</strong></p>
-			${order.notes ? `<p><em>${order.notes}</em></p>` : ''}
-		`;
-		document.body.appendChild(el);
-		window.print();
-		document.body.removeChild(el);
+		printSingleOrder(
+			order,
+			orderItems,
+			$flowerSorts,
+			$inventory,
+			$flowerConstants,
+			$globalCurrency,
+			$t
+		);
 	}
 
 	function handleBackdrop(e: MouseEvent) {

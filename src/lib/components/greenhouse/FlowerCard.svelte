@@ -33,13 +33,21 @@
 	}
 
 	const photoSrc = $derived(resolvePhotoSrc(sort.photo_path, appDataDir));
+
+	const cardStyle = $derived(
+		sort.color_hex
+			? `background: linear-gradient(135deg, ${sort.color_hex}22 0%, var(--glass-bg) 60%); --card-color: ${sort.color_hex};`
+			: ''
+	);
 </script>
 
 <button
 	class="flower-card"
 	class:compact
 	class:selected
+	class:has-color={!!sort.color_hex}
 	type="button"
+	style={cardStyle}
 	{onclick}
 >
 	<!-- Photo area -->
@@ -99,6 +107,11 @@
 		transform: translateY(-2px);
 		box-shadow: 0 8px 24px rgba(0,0,0,0.2);
 		border-color: var(--color-outline, rgba(255,255,255,0.18));
+	}
+
+	.flower-card.has-color:hover {
+		box-shadow: 0 8px 24px rgba(0,0,0,0.2), 0 0 24px color-mix(in srgb, var(--card-color) 25%, transparent);
+		border-color: color-mix(in srgb, var(--card-color) 35%, var(--glass-border));
 	}
 
 	.flower-card.selected {

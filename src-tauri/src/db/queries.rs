@@ -431,10 +431,22 @@ pub fn insert_order_item(
     )
     .map_err(|e| e.to_string())?;
 
+    let pack_count = payload.pack_count.unwrap_or(0);
+    let stems_per_pack = payload.stems_per_pack.unwrap_or(0);
+
     conn.execute(
-        "INSERT INTO order_items (id, order_id, item_id, quantity, unit_price, specifications)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![id, payload.order_id, payload.item_id, payload.quantity, payload.unit_price, specs_str],
+        "INSERT INTO order_items (id, order_id, item_id, quantity, unit_price, specifications, pack_count, stems_per_pack)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            id,
+            payload.order_id,
+            payload.item_id,
+            payload.quantity,
+            payload.unit_price,
+            specs_str,
+            pack_count,
+            stems_per_pack
+        ],
     )
     .map_err(|e| e.to_string())?;
 
@@ -460,7 +472,7 @@ pub fn recalculate_order_total(conn: &Connection, order_id: &str) -> Result<(), 
 pub fn get_order_items(conn: &Connection, order_id: &str) -> Result<Vec<OrderItem>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, order_id, item_id, quantity, unit_price, specifications, created_at
+            "SELECT id, order_id, item_id, quantity, unit_price, specifications, created_at, pack_count, stems_per_pack
              FROM order_items WHERE order_id = ?1 ORDER BY created_at ASC",
         )
         .map_err(|e| e.to_string())?;
@@ -479,6 +491,8 @@ pub fn get_order_items(conn: &Connection, order_id: &str) -> Result<Vec<OrderIte
                 unit_price: row.get(4)?,
                 specifications,
                 created_at: row.get(6)?,
+                pack_count: row.get::<_, i32>(7).unwrap_or(0),
+                stems_per_pack: row.get::<_, i32>(8).unwrap_or(0),
             })
         })
         .map_err(|e| e.to_string())?

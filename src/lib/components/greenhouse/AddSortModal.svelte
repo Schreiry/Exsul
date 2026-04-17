@@ -15,10 +15,13 @@
 	let purchasePrice = $state(0);
 	let sellPriceStem = $state(0);
 	let flowersPerPackOverride = $state<number | null>(null);
+	let colorHex = $state<string | null>(null);
 	let photoPath = $state<string | null>(null);
 	let photoPreview = $state<string | null>(null);
 	let saving = $state(false);
 	let error = $state('');
+
+	const PRESET_COLORS = ['#f472b6','#fb923c','#facc15','#4ade80','#34d399','#22d3ee','#60a5fa','#a78bfa','#e879f9','#94a3b8','#f87171','#ffffff'];
 
 	async function pickPhoto() {
 		try {
@@ -50,6 +53,7 @@
 				purchase_price: purchasePrice || undefined,
 				sell_price_stem: sellPriceStem || undefined,
 				flowers_per_pack_override: flowersPerPackOverride ?? undefined,
+				color_hex: colorHex || undefined,
 			});
 			if (photoPath) {
 				await flowerSorts.savePhoto(id, photoPath);
@@ -137,6 +141,31 @@
 					<label class="field-label" for="fpp">Цветков в упаковке</label>
 					<input id="fpp" class="field-input" type="number" min="1" step="1"
 						bind:value={flowersPerPackOverride} placeholder="по умолч." />
+				</div>
+			</div>
+
+			<!-- Card color -->
+			<div class="field">
+				<span class="field-label">Цвет карточки</span>
+				<div class="color-swatches">
+					{#each PRESET_COLORS as c}
+						<button
+							type="button"
+							class="color-swatch"
+							class:active={colorHex === c}
+							style:background={c}
+							onclick={() => (colorHex = colorHex === c ? null : c)}
+							aria-label="Цвет {c}"
+						></button>
+					{/each}
+					<label class="color-custom" title="Свой цвет">
+						<input
+							type="color"
+							value={colorHex ?? '#6b7280'}
+							oninput={(e) => (colorHex = e.currentTarget.value)}
+						/>
+						<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 3v1m0 16v1m8.66-13.66l-.71.71M4.05 19.95l-.71.71M21 12h-1M4 12H3m16.66 7.66l-.71-.71M4.05 4.05l-.71-.71"/></svg>
+					</label>
 				</div>
 			</div>
 
@@ -322,5 +351,52 @@
 	}
 	:global([data-theme="light"]) .field-input:focus {
 		border-color: var(--color-primary);
+	}
+
+	/* Color swatches */
+	.color-swatches {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		align-items: center;
+	}
+	.color-swatch {
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		border: 2px solid transparent;
+		cursor: pointer;
+		transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+		padding: 0;
+	}
+	.color-swatch:hover { transform: scale(1.18); }
+	.color-swatch.active {
+		border-color: var(--color-on-surface);
+		box-shadow: 0 0 0 2px var(--color-surface), 0 0 8px currentColor;
+	}
+	.color-custom {
+		width: 26px;
+		height: 26px;
+		border-radius: 50%;
+		border: 1.5px dashed var(--color-outline);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		position: relative;
+		overflow: hidden;
+		color: var(--color-outline);
+		transition: border-color 0.15s;
+	}
+	.color-custom:hover { border-color: var(--color-primary); }
+	.color-custom input[type="color"] {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		opacity: 0;
+		cursor: pointer;
+		border: none;
+		padding: 0;
 	}
 </style>

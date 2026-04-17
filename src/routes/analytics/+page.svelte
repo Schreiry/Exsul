@@ -5,6 +5,7 @@
 	import { preset } from '$lib/stores/preset';
 	import { commands } from '$lib/tauri/commands';
 	import { t } from '$lib/stores/i18n';
+	import { showDetailedPricing } from '$lib/stores/appSettings';
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
 	import { hlcToDate } from '$lib/utils/time';
 	import HarvestTimeline from '$lib/components/charts/HarvestTimeline.svelte';
@@ -668,6 +669,7 @@
 					<span class="metric-label">Стоимость склада</span>
 					<span class="metric-value">{fmt(warehouseStats.totalValue)}</span>
 				</div>
+				{#if $showDetailedPricing}
 				<div class="metric-card">
 					<span class="metric-label">Себестоимость</span>
 					<span class="metric-value">{fmt(warehouseStats.totalCost)}</span>
@@ -676,6 +678,7 @@
 					<span class="metric-label">Ср. маржа</span>
 					<span class="metric-value">{warehouseStats.avgMargin}%</span>
 				</div>
+				{/if}
 			</div>
 		</section>
 		{/if}

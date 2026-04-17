@@ -4,6 +4,7 @@
 	import { flowerSorts, flowerConstants } from '$lib/stores/flowers';
 	import { preset } from '$lib/stores/preset';
 	import { t } from '$lib/stores/i18n';
+	import { showDetailedPricing } from '$lib/stores/appSettings';
 	import { commands } from '$lib/tauri/commands';
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
 	import { convertFileSrc } from '@tauri-apps/api/core';
@@ -350,7 +351,7 @@
 					{@const photoSrc = resolvePhoto(sort.photo_path)}
 					{@const fpp = sort.flowers_per_pack_override ?? $flowerConstants.flowers_per_pack}
 					{@const packValue = sort.pkg_stock * fpp * sort.sell_price_stem}
-					<button class="wh-card" type="button" onclick={() => (detailSort = sort)}>
+					<button class="wh-card" class:wh-has-color={!!sort.color_hex} type="button" style={sort.color_hex ? `background: linear-gradient(135deg, ${sort.color_hex}22 0%, var(--glass-bg) 60%); --card-color: ${sort.color_hex};` : ''} onclick={() => (detailSort = sort)}>
 						<div class="wh-card-photo">
 							{#if photoSrc}
 								<img src={photoSrc} alt={sort.name} class="wh-card-img" />
@@ -663,18 +664,22 @@
 					<span class="analytics-val">{analytics.totalStock}</span>
 					<span class="analytics-lbl">На складе</span>
 				</div>
+				{#if $showDetailedPricing}
 				<div class="analytics-kpi">
 					<span class="analytics-val">{analytics.totalCost.toFixed(0)}</span>
 					<span class="analytics-lbl">Себест. (∑)</span>
 				</div>
+				{/if}
 				<div class="analytics-kpi">
 					<span class="analytics-val">{analytics.totalValue.toFixed(0)}</span>
 					<span class="analytics-lbl">Стоимость (∑)</span>
 				</div>
+				{#if $showDetailedPricing}
 				<div class="analytics-kpi">
 					<span class="analytics-val">{analytics.avgMargin}%</span>
 					<span class="analytics-lbl">Ср. маржа</span>
 				</div>
+				{/if}
 				<div class="analytics-kpi">
 					<span class="analytics-val">{analytics.totalSold}</span>
 					<span class="analytics-lbl">Продано</span>
@@ -1183,6 +1188,11 @@
 		transform: translateY(-3px);
 		box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
 		border-color: var(--color-outline);
+	}
+
+	.wh-card.wh-has-color:hover {
+		box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 0 24px color-mix(in srgb, var(--card-color) 25%, transparent);
+		border-color: color-mix(in srgb, var(--card-color) 35%, var(--glass-border));
 	}
 
 	/* ── Card photo area ── */

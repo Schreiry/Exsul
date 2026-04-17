@@ -162,6 +162,10 @@ pub struct OrderItem {
     pub unit_price: f64,
     pub specifications: serde_json::Value,
     pub created_at: String,
+    #[serde(default)]
+    pub pack_count: i32,
+    #[serde(default)]
+    pub stems_per_pack: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,6 +184,10 @@ pub struct AddOrderItemPayload {
     pub quantity: i32,
     pub unit_price: f64,
     pub specifications: Option<serde_json::Value>,
+    #[serde(default)]
+    pub pack_count: Option<i32>,
+    #[serde(default)]
+    pub stems_per_pack: Option<i32>,
 }
 
 // ============================================================

@@ -6,6 +6,7 @@
 	import { inventory } from '$lib/stores/inventory';
 	import { categories } from '$lib/stores/categories';
 	import { flowerConstants } from '$lib/stores/flowers';
+	import { showDetailedPricing, loadPricingToggle, setPricingToggle } from '$lib/stores/appSettings';
 	import { commands } from '$lib/tauri/commands';
 	import { globalCurrency, CURRENCIES, findCurrency } from '$lib/stores/currency';
 
@@ -30,6 +31,7 @@
 	$effect(() => {
 		if ($preset === 'flowers') {
 			flowerConstants.load();
+			loadPricingToggle();
 		}
 	});
 
@@ -332,6 +334,23 @@
 		<button class="btn-primary" style="margin-top:16px" onclick={handleSaveConstants} disabled={constantsSaving}>
 			{constantsSaving ? '…' : $t('action_save')}
 		</button>
+	</section>
+
+	<!-- ── Detailed pricing toggle (preset=flowers only) ─────── -->
+	<section class="section">
+		<h2>{$t('label_detailed_pricing')}</h2>
+		<p class="hint">{$t('hint_detailed_pricing')}</p>
+		<label class="toggle-row">
+			<span class="toggle-label">{$t('label_detailed_pricing')}</span>
+			<span class="toggle-switch" class:toggle-on={$showDetailedPricing}>
+				<input
+					type="checkbox"
+					checked={$showDetailedPricing}
+					onchange={(e) => setPricingToggle((e.target as HTMLInputElement).checked)}
+				/>
+				<span class="toggle-slider"></span>
+			</span>
+		</label>
 	</section>
 	{/if}
 
@@ -725,5 +744,63 @@
 	.pricing-mode-option input[type="radio"] {
 		accent-color: var(--color-primary);
 		cursor: pointer;
+	}
+
+	/* ── Toggle switch ─────────────────────────────────────── */
+	.toggle-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 12px 0;
+		cursor: pointer;
+	}
+
+	.toggle-label {
+		font-size: 0.9rem;
+		color: var(--color-on-surface);
+	}
+
+	.toggle-switch {
+		position: relative;
+		display: inline-block;
+		width: 44px;
+		height: 24px;
+		flex-shrink: 0;
+	}
+
+	.toggle-switch input[type="checkbox"] {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.toggle-slider {
+		position: absolute;
+		inset: 0;
+		background: var(--glass-border);
+		border-radius: 24px;
+		transition: background 0.2s;
+	}
+
+	.toggle-slider::before {
+		content: '';
+		position: absolute;
+		top: 3px;
+		left: 3px;
+		width: 18px;
+		height: 18px;
+		background: var(--color-on-surface);
+		border-radius: 50%;
+		transition: transform 0.2s;
+	}
+
+	.toggle-switch.toggle-on .toggle-slider {
+		background: var(--color-primary);
+	}
+
+	.toggle-switch.toggle-on .toggle-slider::before {
+		transform: translateX(20px);
+		background: #fff;
 	}
 </style>
