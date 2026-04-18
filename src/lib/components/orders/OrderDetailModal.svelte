@@ -7,6 +7,7 @@
 	import { t } from '$lib/stores/i18n';
 	import { formatCountdown } from '$lib/utils/countdown';
 	import { printSingleOrder } from '$lib/utils/print';
+	import { computeLine, resolveItemName } from '$lib/utils/orderLine';
 	import OrderProgressBar from './OrderProgressBar.svelte';
 	import FlowerCard from '$lib/components/greenhouse/FlowerCard.svelte';
 	import type { Order, OrderItem, FlowerSort } from '$lib/tauri/types';
@@ -48,6 +49,34 @@
 		}
 		return result;
 	});
+
+	// Line-by-line breakdown — uses the same computeLine as print.ts so the
+	// modal and printed output agree to the cent.
+	const lines = $derived.by(() => {
+		if ($preset !== 'flowers') return [];
+		return orderItems.map((oi) => {
+			const sort = $flowerSorts.find((s) => s.id === oi.sort_id || s.id === oi.item_id);
+			const { name, variety } = resolveItemName(oi, $flowerSorts, $inventory);
+			const calc = computeLine(oi, sort, $flowerConstants);
+			return { oi, sort, name, variety, calc };
+		});
+	});
+
+	const totals = $derived.by(() => {
+		let packs = 0;
+		let stems = 0;
+		let sum = 0;
+		for (const l of lines) {
+			packs += l.calc.packCount;
+			stems += l.calc.packCount * l.calc.stemsPerPack;
+			sum += l.calc.lineTotal;
+		}
+		return { packs, stems, sum };
+	});
+
+	const totalsMismatch = $derived(
+		order.total_amount > 0 && Math.abs(totals.sum - order.total_amount) > 0.01
+	);
 
 	async function handleStatusChange(newStatus: string) {
 		await orders.updateStatus(order.id, newStatus);
@@ -152,6 +181,56 @@
 					<div class="section">
 						<h3 class="section-title">Заметки</h3>
 						<p class="notes-text">{order.notes}</p>
+					</div>
+				{/if}
+
+				<!-- Order items — sort, packs, stems, per-stem / per-pack price, line total -->
+				{#if lines.length > 0}
+					<div class="section">
+						<h3 class="section-title">{$t('order_items_section_title')}</h3>
+						<div class="items-table-wrap">
+							<table class="items-table">
+								<thead>
+									<tr>
+										<th class="it-sort">{$t('label_sort_col')}</th>
+										<th class="it-num">{$t('label_pack_count')}</th>
+										<th class="it-num">{$t('label_stems_per_pack')}</th>
+										<th class="it-num">{$t('label_price_per_stem')}</th>
+										<th class="it-num">{$t('label_price_per_pack')}</th>
+										<th class="it-num">{$t('label_line_total')}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each lines as l (l.oi.id)}
+										<tr>
+											<td class="it-sort">
+												<span class="it-name">{l.name}</span>
+												{#if l.variety}
+													<span class="it-variety">{l.variety}</span>
+												{/if}
+											</td>
+											<td class="it-num">{l.calc.packCount}</td>
+											<td class="it-num">{l.calc.stemsPerPack}</td>
+											<td class="it-num">{formatAmount(l.calc.pricePerStem, $globalCurrency)}</td>
+											<td class="it-num">{formatAmount(l.calc.pricePerPack, $globalCurrency)}</td>
+											<td class="it-num it-line-total">{formatAmount(l.calc.lineTotal, $globalCurrency)}</td>
+										</tr>
+									{/each}
+								</tbody>
+								<tfoot>
+									<tr>
+										<td class="it-sort it-foot-label">{$t('print_summary')}</td>
+										<td class="it-num it-foot">{totals.packs}</td>
+										<td class="it-num it-foot">{totals.stems}</td>
+										<td class="it-num"></td>
+										<td class="it-num"></td>
+										<td class="it-num it-foot it-line-total" class:mismatch={totalsMismatch}>
+											{formatAmount(totals.sum, $globalCurrency)}
+										</td>
+									</tr>
+								</tfoot>
+							</table>
+						</div>
 					</div>
 				{/if}
 
@@ -341,6 +420,50 @@
 
 	/* Sorts row */
 	.sorts-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+
+	/* Items table */
+	.items-table-wrap {
+		overflow-x: auto;
+		border: 1px solid var(--glass-border);
+		border-radius: 12px;
+		background: var(--glass-bg);
+	}
+	.items-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.82rem;
+	}
+	.items-table th,
+	.items-table td {
+		padding: 8px 10px;
+		text-align: left;
+		border-bottom: 1px solid var(--glass-border);
+	}
+	.items-table th {
+		font-size: 0.68rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-outline);
+		background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
+	}
+	.items-table tbody tr:last-child td { border-bottom: none; }
+	.items-table .it-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+	.items-table .it-name { display: block; color: var(--color-on-surface); font-weight: 500; }
+	.items-table .it-variety { display: block; color: var(--color-outline); font-size: 0.72rem; margin-top: 2px; }
+	.items-table .it-line-total { font-weight: 600; color: var(--color-primary); }
+	.items-table tfoot td {
+		border-top: 1.5px solid var(--glass-border);
+		border-bottom: none;
+		font-weight: 600;
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+	}
+	.items-table .it-foot-label { text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.04em; color: var(--color-outline); }
+	.items-table .it-foot { color: var(--color-on-surface); }
+	.items-table .mismatch {
+		color: var(--color-alert-red, #ef4444);
+		text-decoration: underline dotted;
+	}
 
 	/* Right column cards */
 	.deadline-card {

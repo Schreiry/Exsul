@@ -10,6 +10,14 @@
 	import { commands } from '$lib/tauri/commands';
 	import { convertFileSrc } from '@tauri-apps/api/core';
 	import HarvestTimeline from '$lib/components/charts/HarvestTimeline.svelte';
+	import IconSync from '$lib/components/icons/IconSync.svelte';
+	import IconOrders from '$lib/components/icons/IconOrders.svelte';
+	import IconGreenhouse from '$lib/components/icons/IconGreenhouse.svelte';
+	import IconWarehouse from '$lib/components/icons/IconWarehouse.svelte';
+	import IconAnalytics from '$lib/components/icons/IconAnalytics.svelte';
+	import IconAudit from '$lib/components/icons/IconAudit.svelte';
+	import IconStem from '$lib/components/icons/IconStem.svelte';
+	import IconBouquet from '$lib/components/icons/IconBouquet.svelte';
 	import type { HarvestLogEntry } from '$lib/tauri/types';
 
 	type WidgetId = 'sync' | 'orders' | 'inventory' | 'greenhouse' | 'chart' | 'activity';
@@ -225,7 +233,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="bento-card bento-sync" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-sync">
-				<span class="bento-icon">⚡</span>
+				<span class="bento-icon"><IconSync /></span>
 				<span class="bento-label">{$t('bento_sync_title')}</span>
 			</div>
 			<div class="bento-card-body">
@@ -264,7 +272,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="bento-card bento-orders" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-orders">
-				<span class="bento-icon">📋</span>
+				<span class="bento-icon"><IconOrders /></span>
 				<span class="bento-label">{$t('bento_orders_title')}</span>
 				<a href="/orders" class="bento-view-all">{$t('bento_view_all')}</a>
 			</div>
@@ -304,7 +312,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="bento-card bento-greenhouse" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-greenhouse">
-				<span class="bento-icon">🌱</span>
+				<span class="bento-icon"><IconGreenhouse /></span>
 				<span class="bento-label">Теплица</span>
 				<a href="/flowers" class="bento-view-all">{$t('bento_view_all')}</a>
 			</div>
@@ -353,8 +361,8 @@
 									{/if}
 								</div>
 								<div class="gh-recent-stats">
-									<span class="gh-recent-raw">🌿 {sort.raw_stock}</span>
-									<span class="gh-recent-pkg">📦 {sort.pkg_stock}</span>
+									<span class="gh-recent-raw"><IconStem /> {sort.raw_stock}</span>
+									<span class="gh-recent-pkg"><IconWarehouse /> {sort.pkg_stock}</span>
 								</div>
 							</div>
 						{/each}
@@ -369,7 +377,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="bento-card bento-inventory" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-inventory">
-				<span class="bento-icon">📦</span>
+				<span class="bento-icon"><IconWarehouse /></span>
 				<span class="bento-label">{$t('bento_inventory_title')}</span>
 				<a href="/inventory" class="bento-view-all">{$t('bento_view_all')}</a>
 			</div>
@@ -411,7 +419,9 @@
 									<span class="inv-recent-name">{sort.name}</span>
 									<span class="inv-recent-cat">{sort.variety ?? ''}</span>
 								</div>
-								<span class="inv-recent-stock">📦 {sort.pkg_stock} · 🌸 {sort.raw_stock}</span>
+								<span class="inv-recent-stock">
+									<IconWarehouse /> {sort.pkg_stock} · <IconBouquet /> {sort.raw_stock}
+								</span>
 							</div>
 						{/each}
 					</div>
@@ -454,7 +464,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="bento-card bento-chart bento-chart-wide" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-chart">
-				<span class="bento-icon">📈</span>
+				<span class="bento-icon"><IconAnalytics /></span>
 				<span class="bento-label">{$t('bento_chart_title')}</span>
 				<a href="/analytics" class="bento-view-all">{$t('bento_view_all')}</a>
 			</div>
@@ -475,7 +485,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="bento-card bento-activity" onpointermove={handleCardPointerMove} onpointerleave={handleCardPointerLeave}>
 			<div class="bento-card-header accent-activity">
-				<span class="bento-icon">🕐</span>
+				<span class="bento-icon"><IconAudit /></span>
 				<span class="bento-label">{$t('bento_activity_title')}</span>
 				<a href="/audit" class="bento-view-all">{$t('bento_view_all')}</a>
 			</div>
@@ -653,7 +663,15 @@
 	.accent-chart      { border-left: 3px solid var(--color-secondary); }
 	.accent-activity   { border-left: 3px solid var(--color-tertiary); }
 
-	.bento-icon { font-size: 1rem; }
+	.bento-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		color: currentColor;
+	}
+	.bento-icon :global(svg) { width: 16px; height: 16px; }
 
 	.bento-label {
 		font-size: 0.78rem;
@@ -904,7 +922,11 @@
 		font-size: 0.78rem;
 		color: var(--color-secondary);
 		font-weight: 500;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
 	}
+	.inv-recent-stock :global(svg) { width: 12px; height: 12px; }
 
 	/* ── Chart block ── */
 	.chart-body {
@@ -1152,4 +1174,12 @@
 		opacity: 0.7;
 		flex-shrink: 0;
 	}
+	.gh-recent-raw,
+	.gh-recent-pkg {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+	}
+	.gh-recent-raw :global(svg),
+	.gh-recent-pkg :global(svg) { width: 12px; height: 12px; }
 </style>

@@ -1,9 +1,18 @@
 <script lang="ts">
+	import type { Component } from 'svelte';
 	import { auditLog } from '$lib/stores/audit';
 	import { t } from '$lib/stores/i18n';
 	import GlassDropdown from '$lib/components/common/GlassDropdown.svelte';
 	import { formatDateTime, formatTime, formatDayLabel, groupByDay } from '$lib/utils/time';
 	import type { AuditLogFilter } from '$lib/tauri/types';
+	import IconActionAdd from '$lib/components/icons/actions/IconActionAdd.svelte';
+	import IconActionEdit from '$lib/components/icons/actions/IconActionEdit.svelte';
+	import IconActionStock from '$lib/components/icons/actions/IconActionStock.svelte';
+	import IconActionPrice from '$lib/components/icons/actions/IconActionPrice.svelte';
+	import IconActionSale from '$lib/components/icons/actions/IconActionSale.svelte';
+	import IconActionImage from '$lib/components/icons/actions/IconActionImage.svelte';
+	import IconActionOrderStatus from '$lib/components/icons/actions/IconActionOrderStatus.svelte';
+	import IconActionDefault from '$lib/components/icons/actions/IconActionDefault.svelte';
 
 	let filterSince = $state('');
 	let filterUntil = $state('');
@@ -32,20 +41,20 @@
 	}
 
 	// ── Action metadata ────────────────────────────────────────
-	type ActionMeta = { icon: string; label: string; color: string };
+	type ActionMeta = { icon: Component; label: string; color: string };
 
 	const ACTION_META: Record<string, ActionMeta> = {
-		ItemCreated:        { icon: '➕', label: 'Добавлен товар',       color: '#34d399' },
-		ItemUpdated:        { icon: '✏️',  label: 'Изменён товар',        color: '#60a5fa' },
-		StockAdjusted:      { icon: '📦', label: 'Изменён остаток',       color: '#a78bfa' },
-		PriceChanged:       { icon: '💰', label: 'Изменена цена',         color: '#fbbf24' },
-		SaleRecorded:       { icon: '🛒', label: 'Продажа',               color: '#34d399' },
-		ItemImageSaved:     { icon: '🖼️', label: 'Фото товара',           color: '#5bb8d0' },
-		OrderStatusChanged: { icon: '📋', label: 'Статус заказа',         color: '#f472b6' },
+		ItemCreated:        { icon: IconActionAdd,         label: 'Добавлен товар',  color: '#34d399' },
+		ItemUpdated:        { icon: IconActionEdit,        label: 'Изменён товар',   color: '#60a5fa' },
+		StockAdjusted:      { icon: IconActionStock,       label: 'Изменён остаток', color: '#a78bfa' },
+		PriceChanged:       { icon: IconActionPrice,       label: 'Изменена цена',   color: '#fbbf24' },
+		SaleRecorded:       { icon: IconActionSale,        label: 'Продажа',         color: '#34d399' },
+		ItemImageSaved:     { icon: IconActionImage,       label: 'Фото товара',     color: '#5bb8d0' },
+		OrderStatusChanged: { icon: IconActionOrderStatus, label: 'Статус заказа',   color: '#f472b6' },
 	};
 
 	function getMeta(action: string): ActionMeta {
-		return ACTION_META[action] ?? { icon: '🔹', label: action, color: 'var(--color-outline)' };
+		return ACTION_META[action] ?? { icon: IconActionDefault, label: action, color: 'var(--color-outline)' };
 	}
 
 	// ── Human-readable payload ─────────────────────────────────
@@ -133,6 +142,7 @@
 						{#each entries as log (log.id)}
 							{@const meta = getMeta(log.action)}
 							{@const desc = describePayload(log.action, log.payload)}
+							{@const IconCmp = meta.icon}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
 								class="entry"
@@ -142,7 +152,9 @@
 								role="button"
 								tabindex="0"
 							>
-								<div class="entry-icon" style:color={meta.color}>{meta.icon}</div>
+								<div class="entry-icon" style:color={meta.color}>
+									<IconCmp />
+								</div>
 								<div class="entry-body">
 									<div class="entry-main">
 										<span class="entry-label" style:color={meta.color}>{meta.label}</span>
@@ -316,10 +328,12 @@
 	.entry-expanded { background: var(--glass-bg-hover); }
 
 	.entry-icon {
-		font-size: 1.1rem;
 		flex-shrink: 0;
 		width: 28px;
-		text-align: center;
+		height: 20px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		margin-top: 1px;
 	}
 

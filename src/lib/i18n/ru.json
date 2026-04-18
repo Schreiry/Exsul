@@ -239,10 +239,14 @@
   "label_order_date": "Дата",
   "label_status_col": "Статус",
   "label_sort_col": "Сорт",
+  "label_line_total": "Сумма",
+  "order_items_section_title": "Позиции заказа",
 
   "print_registry_title": "Реестр заказов",
   "print_registry_period": "Период",
   "print_registry_grand_total": "Итого по реестру",
+  "print_registry_grand_packs": "Всего упаковок",
+  "print_registry_grand_stems": "Всего стеблей",
 
   "print_dialog_title": "Параметры печати реестра",
   "print_dialog_date_from": "Начало периода",

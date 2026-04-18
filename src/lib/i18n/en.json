@@ -239,10 +239,14 @@
   "label_order_date": "Date",
   "label_status_col": "Status",
   "label_sort_col": "Sort",
+  "label_line_total": "Line total",
+  "order_items_section_title": "Order items",
 
   "print_registry_title": "Orders Registry",
   "print_registry_period": "Period",
   "print_registry_grand_total": "Registry total",
+  "print_registry_grand_packs": "Total packs",
+  "print_registry_grand_stems": "Total stems",
 
   "print_dialog_title": "Print Registry Settings",
   "print_dialog_date_from": "From",

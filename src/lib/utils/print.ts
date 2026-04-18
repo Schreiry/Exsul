@@ -1,4 +1,5 @@
 import type { Order, OrderItem, FlowerSort, FlowerConstants, Item } from '$lib/tauri/types';
+import { computeLine, resolveItemName } from '$lib/utils/orderLine';
 
 type TranslateFn = (key: string) => string;
 type GetItemsFn = (orderId: string) => Promise<OrderItem[]>;
@@ -251,7 +252,9 @@ const PRINT_DOC_CSS = `
 		padding: 10px 14px;
 		border-top: 2.5px solid #111;
 		display: flex;
+		flex-wrap: wrap;
 		justify-content: space-between;
+		gap: 12px 24px;
 		align-items: baseline;
 		font-size: 12pt;
 	}
@@ -283,50 +286,6 @@ function formatDateTime(iso?: string): string {
 	} catch {
 		return iso;
 	}
-}
-
-function resolveItemName(
-	item: OrderItem,
-	flowerSorts: FlowerSort[],
-	inventoryItems: Item[]
-): { name: string; variety?: string } {
-	// Prefer the explicit sort_id link (reliable since migration 014).
-	// Fall back to item_id for legacy data where the link was never written.
-	const sort = flowerSorts.find((s) => s.id === item.sort_id || s.id === item.item_id);
-	if (sort) return { name: sort.name, variety: sort.variety };
-	const inv = inventoryItems.find((i) => i.id === item.item_id);
-	return { name: inv?.name ?? item.item_id };
-}
-
-interface LineCalc {
-	packCount: number;
-	stemsPerPack: number;
-	pricePerPack: number;
-	pricePerStem: number;
-	lineTotal: number;
-}
-
-function computeLine(
-	item: OrderItem,
-	sort: FlowerSort | undefined,
-	constants: FlowerConstants
-): LineCalc {
-	const fallbackStems =
-		sort?.flowers_per_pack_override ?? constants.flowers_per_pack ?? 1;
-	const stemsPerPack =
-		item.stems_per_pack && item.stems_per_pack > 0 ? item.stems_per_pack : fallbackStems;
-	const packCount =
-		item.pack_count && item.pack_count > 0 ? item.pack_count : item.quantity;
-
-	// unit_price is "price per pack" (AddItemModal stores pricePerPack).
-	// Fallback: derive from sort.sell_price_stem * stemsPerPack when missing.
-	let pricePerPack = item.unit_price;
-	if ((!pricePerPack || pricePerPack <= 0) && sort) {
-		pricePerPack = (sort.sell_price_stem ?? 0) * stemsPerPack;
-	}
-	const pricePerStem = stemsPerPack > 0 ? pricePerPack / stemsPerPack : 0;
-	const lineTotal = packCount * pricePerPack;
-	return { packCount, stemsPerPack, pricePerPack, pricePerStem, lineTotal };
 }
 
 function formatMoney(value: number, currencyCode: string): string {
@@ -460,7 +419,15 @@ function printViaIframe(title: string, bodyHtml: string): void {
 		if (frame.parentNode) frame.parentNode.removeChild(frame);
 	};
 
+	// WebView2 fires the `load` event twice: once for the initial about:blank
+	// when the iframe is appended, and again after `document.write` flushes.
+	// Without a guard, `win.print()` runs twice → two system dialogs, requiring
+	// the user to hit Cancel twice. Guard with both `{ once: true }` and an
+	// explicit boolean so defense-in-depth catches any WebView2 quirk.
+	let printed = false;
 	const doPrint = () => {
+		if (printed) return;
+		printed = true;
 		const win = frame.contentWindow;
 		if (!win) {
 			cleanup();
@@ -480,10 +447,14 @@ function printViaIframe(title: string, bodyHtml: string): void {
 		setTimeout(cleanup, 15_000);
 	};
 
-	frame.addEventListener('load', () => {
-		// Give the WebView one paint tick to finalize layout inside the iframe.
-		setTimeout(doPrint, 50);
-	});
+	frame.addEventListener(
+		'load',
+		() => {
+			// Give the WebView one paint tick to finalize layout inside the iframe.
+			setTimeout(doPrint, 50);
+		},
+		{ once: true }
+	);
 
 	document.body.appendChild(frame);
 
@@ -705,6 +676,8 @@ export async function printOrdersRegistry(
 
 	const rows: string[] = [];
 	let grandTotal = 0;
+	let grandPacks = 0;
+	let grandStems = 0;
 	let rowIdx = 0;
 
 	for (const { order, items } of pairs) {
@@ -736,7 +709,18 @@ export async function printOrdersRegistry(
 			const sort = flowerSorts.find((s) => s.id === it.sort_id || s.id === it.item_id);
 			const { name, variety } = resolveItemName(it, flowerSorts, inventoryItems);
 			const calc = computeLine(it, sort, constants);
+			if (calc.lineTotal === 0 && calc.packCount === 0) {
+				// Flag for the developer: either `unit_price` was lost on write,
+				// or the row predates the `sort_id` backfill AND its item_id no
+				// longer matches a live flower_sort. The row still renders (so
+				// the user sees it exists), but totals can't be reconstructed.
+				console.warn('[printOrdersRegistry] zero-value line', {
+					order: order.id, item: it.id, sort_id: it.sort_id, item_id: it.item_id,
+				});
+			}
 			orderSubtotal += calc.lineTotal;
+			grandPacks += calc.packCount;
+			grandStems += calc.packCount * calc.stemsPerPack;
 			const sortLabel = variety
 				? `${escapeHtml(name)} — ${escapeHtml(variety)}`
 				: escapeHtml(name);
@@ -809,6 +793,8 @@ export async function printOrdersRegistry(
 	const totalsFooter = `
 		<div class="print-registry-footer">
 			<span>${escapeHtml(t('print_total_orders'))}: <strong>${ordersList.length}</strong></span>
+			<span>${escapeHtml(t('print_registry_grand_packs'))}: <strong>${grandPacks}</strong></span>
+			<span>${escapeHtml(t('print_registry_grand_stems'))}: <strong>${grandStems}</strong></span>
 			<span class="grand">${escapeHtml(t('print_registry_grand_total'))}: ${formatMoney(grandTotal, currencyCode)}</span>
 		</div>
 	`;
