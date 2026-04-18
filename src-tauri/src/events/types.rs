@@ -166,6 +166,8 @@ pub struct OrderItem {
     pub pack_count: i32,
     #[serde(default)]
     pub stems_per_pack: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,6 +190,8 @@ pub struct AddOrderItemPayload {
     pub pack_count: Option<i32>,
     #[serde(default)]
     pub stems_per_pack: Option<i32>,
+    #[serde(default)]
+    pub sort_id: Option<String>,
 }
 
 // ============================================================

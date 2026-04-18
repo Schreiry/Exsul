@@ -182,8 +182,16 @@
 		onkeydown={handleBackdropKeydown}
 	></div>
 
-	<!-- Modal -->
-	<div class="modal" role="dialog" aria-modal="true" aria-label={item.name}>
+	<!-- Modal — picks up a subtle tint from the item's card color. The
+	     CSS variable is exposed so .has-color rules can use color-mix. -->
+	<div
+		class="modal"
+		class:has-color={!!item.card_color}
+		style={item.card_color ? `--card-color: ${item.card_color};` : ''}
+		role="dialog"
+		aria-modal="true"
+		aria-label={item.name}
+	>
 		<!-- Header -->
 		<div class="modal-header">
 			<div class="header-left">
@@ -370,6 +378,27 @@
 		box-shadow: var(--glass-shadow-hover);
 
 		animation: modal-in 0.22s var(--ease-spring) both;
+	}
+
+	/* Subtle card-color wash for the edit modal. Kept light (≤18%) so
+	   form labels/inputs stay legible; a delicate top-to-bottom fade
+	   echoes the card's accent without overpowering the dialog. */
+	.modal.has-color {
+		background:
+			linear-gradient(160deg,
+				color-mix(in srgb, var(--card-color) 18%, rgba(14,14,18,0.80)) 0%,
+				rgba(14,14,18,0.80) 65%);
+		border-color: color-mix(in srgb, var(--card-color) 35%, var(--glass-border));
+		box-shadow:
+			var(--glass-shadow-hover),
+			0 0 60px color-mix(in srgb, var(--card-color) 18%, transparent);
+	}
+
+	:global([data-theme="light"]) .modal.has-color {
+		background:
+			linear-gradient(160deg,
+				color-mix(in srgb, var(--card-color) 16%, var(--color-surface, #fafafa)) 0%,
+				var(--color-surface, #fafafa) 65%);
 	}
 
 	@keyframes modal-in {

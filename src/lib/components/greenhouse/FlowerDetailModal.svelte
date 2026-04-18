@@ -145,7 +145,13 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 <div class="modal-backdrop" onclick={handleBackdropClick} role="dialog" aria-modal="true">
-	<div class="modal-panel">
+	<!-- Panel picks up a subtle tint from the sort's assigned color so
+	     the modal feels visually tied to the card the user clicked. -->
+	<div
+		class="modal-panel"
+		class:has-color={!!sort.color_hex}
+		style={sort.color_hex ? `--card-color: ${sort.color_hex};` : ''}
+	>
 
 		<!-- Left panel: photo + info / edit form -->
 		<div class="panel-left">
@@ -364,6 +370,19 @@
 		border-radius: 24px;
 		overflow: hidden;
 		box-shadow: 0 32px 80px rgba(0,0,0,0.55);
+	}
+
+	/* Light tint for the detail panel — mirrors the card's accent without
+	   obscuring the photo, form fields or harvest log. */
+	.modal-panel.has-color {
+		background:
+			linear-gradient(160deg,
+				color-mix(in srgb, var(--card-color) 16%, var(--color-surface)) 0%,
+				var(--color-surface) 60%);
+		border-color: color-mix(in srgb, var(--card-color) 32%, var(--glass-border));
+		box-shadow:
+			0 32px 80px rgba(0,0,0,0.55),
+			0 0 50px color-mix(in srgb, var(--card-color) 16%, transparent);
 	}
 
 	/* Left panel */

@@ -6,10 +6,11 @@
 	import { t } from '$lib/stores/i18n';
 	import { globalCurrency, formatAmount } from '$lib/stores/currency';
 	import { commands } from '$lib/tauri/commands';
-	import { printSingleOrder, printAllOrders } from '$lib/utils/print';
+	import { printSingleOrder, printOrdersRegistry } from '$lib/utils/print';
 	import OrderProgressBar from '$lib/components/orders/OrderProgressBar.svelte';
 	import OrderDetailModal from '$lib/components/orders/OrderDetailModal.svelte';
 	import AddItemModal from '$lib/components/orders/AddItemModal.svelte';
+	import PrintAllOrdersDialog from '$lib/components/orders/PrintAllOrdersDialog.svelte';
 	import { formatCountdown } from '$lib/utils/countdown';
 	import type { CreateOrderPayload, AddOrderItemPayload, OrderStatus, Order } from '$lib/tauri/types';
 
@@ -28,6 +29,8 @@
 	let showForm = $state(false);
 	let showAddItem = $state(false);
 	let detailOrder = $state<Order | null>(null);
+	let showPrintDialog = $state(false);
+	let earliestDate = $state<string | null>(null);
 
 	// Live countdown — one shared timer updates all cards each minute
 	let countdowns = $state<Record<string, string>>({});
@@ -73,7 +76,7 @@
 		const map = new Map<number, number>();
 		for (let i = 0; i < pendingItems.length; i++) {
 			const item = pendingItems[i];
-			const sort = $flowerSorts.find((s) => s.id === item.item_id);
+			const sort = $flowerSorts.find((s) => s.id === item.sort_id || s.id === item.item_id);
 			if (sort && item.quantity > sort.pkg_stock) {
 				map.set(i, item.quantity - sort.pkg_stock);
 			}
@@ -83,6 +86,7 @@
 
 	function handleAddItem(item: {
 		item_id: string;
+		sort_id?: string;
 		quantity: number;
 		unit_price: number;
 		pack_count: number;
@@ -126,15 +130,44 @@
 		printSingleOrder(order, items, $flowerSorts, $inventory, $flowerConstants, $globalCurrency, $t);
 	}
 
-	async function handlePrintAll() {
-		await printAllOrders(
-			filteredOrders,
+	async function openPrintDialog() {
+		// Fetch the earliest order date lazily — the dialog uses it to seed
+		// the "from" field and constrain the date picker. A single silent
+		// failure should not block printing: fall back to `null`, which the
+		// dialog treats as "no history yet".
+		try {
+			earliestDate = await orders.getEarliestDate();
+		} catch (e) {
+			console.warn('Failed to fetch earliest order date:', e);
+			earliestDate = null;
+		}
+		showPrintDialog = true;
+	}
+
+	async function confirmPrintAll(range: { dateFrom: string; dateTo: string }) {
+		showPrintDialog = false;
+		// Filter in local timezone. `created_at` is stored as ISO-8601 (UTC),
+		// but the picker yields a YYYY-MM-DD date in the user's locale — we
+		// treat the range as inclusive calendar days for the local user.
+		const from = new Date(range.dateFrom + 'T00:00:00').getTime();
+		const to = new Date(range.dateTo + 'T23:59:59.999').getTime();
+		const subset = filteredOrders.filter((o) => {
+			const ts = new Date(o.created_at).getTime();
+			return ts >= from && ts <= to;
+		});
+		if (subset.length === 0) {
+			// The dialog already warned about an empty range; nothing to print.
+			return;
+		}
+		await printOrdersRegistry(
+			subset,
 			(id) => orders.getItems(id),
 			$flowerSorts,
 			$inventory,
 			$flowerConstants,
 			$globalCurrency,
-			$t
+			$t,
+			{ from: range.dateFrom, to: range.dateTo }
 		);
 	}
 
@@ -153,8 +186,8 @@
 		<div class="page-header-actions">
 			<button
 				class="btn-secondary print-all-btn"
-				onclick={handlePrintAll}
-				disabled={filteredOrders.length === 0}
+				onclick={openPrintDialog}
+				disabled={$orders.length === 0}
 				title={$t('action_print_all_orders')}
 				aria-label={$t('action_print_all_orders')}
 			>
@@ -221,7 +254,7 @@
 					{#each pendingItems as item, i}
 						<div class="item-row" class:item-shortage={shortages.has(i)}>
 							<span class="item-name">{isFlowers
-								? ($flowerSorts.find(s => s.id === item.item_id)?.name ?? item.item_id)
+								? ($flowerSorts.find(s => s.id === item.sort_id || s.id === item.item_id)?.name ?? item.item_id)
 								: ($inventory.find(it => it.id === item.item_id)?.name ?? item.item_id)
 							}</span>
 							<span class="item-qty">x{item.quantity}</span>
@@ -335,6 +368,14 @@
 		flowerSorts={$flowerSorts}
 		onconfirm={handleAddItem}
 		onclose={() => (showAddItem = false)}
+	/>
+{/if}
+
+{#if showPrintDialog}
+	<PrintAllOrdersDialog
+		{earliestDate}
+		onconfirm={confirmPrintAll}
+		onclose={() => (showPrintDialog = false)}
 	/>
 {/if}
 

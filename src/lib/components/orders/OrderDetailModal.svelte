@@ -37,12 +37,13 @@
 		};
 	});
 
-	// Find the associated flower sorts (first order item's sort_id, or item_id matching a sort)
+	// Find the associated flower sorts. Prefer the explicit sort_id link
+	// (reliable since migration 014); fall back to item_id for legacy rows.
 	const linkedSorts = $derived(() => {
 		if ($preset !== 'flowers') return [];
 		const result: FlowerSort[] = [];
 		for (const oi of orderItems) {
-			const sort = $flowerSorts.find((s) => s.id === oi.item_id || s.id === (oi as { sort_id?: string }).sort_id);
+			const sort = $flowerSorts.find((s) => s.id === oi.sort_id || s.id === oi.item_id);
 			if (sort && !result.find(s => s.id === sort.id)) result.push(sort);
 		}
 		return result;

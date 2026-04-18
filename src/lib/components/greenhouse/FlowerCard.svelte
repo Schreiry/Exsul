@@ -34,10 +34,11 @@
 
 	const photoSrc = $derived(resolvePhotoSrc(sort.photo_path, appDataDir));
 
+	// Only publish the color as a CSS variable — the gradient, border and
+	// ambient glow are handled in CSS via `.has-color` rules so we can tune
+	// static vs. hover consistently without duplicating values in JS.
 	const cardStyle = $derived(
-		sort.color_hex
-			? `background: linear-gradient(135deg, ${sort.color_hex}22 0%, var(--glass-bg) 60%); --card-color: ${sort.color_hex};`
-			: ''
+		sort.color_hex ? `--card-color: ${sort.color_hex};` : ''
 	);
 </script>
 
@@ -109,9 +110,24 @@
 		border-color: var(--color-outline, rgba(255,255,255,0.18));
 	}
 
+	/* Static tint: saturated enough to read clearly in any theme,
+	   light enough that text on top stays legible. Gradient diagonals
+	   from a strong color wash in the top-left to the neutral surface
+	   so the card still feels like part of the glass layer. */
+	.flower-card.has-color {
+		background:
+			linear-gradient(135deg,
+				color-mix(in srgb, var(--card-color) 32%, var(--glass-bg)) 0%,
+				color-mix(in srgb, var(--card-color) 10%, var(--glass-bg)) 100%);
+		border-color: color-mix(in srgb, var(--card-color) 42%, var(--glass-border));
+		box-shadow:
+			inset 0 1px 0 color-mix(in srgb, var(--card-color) 22%, transparent),
+			0 2px 10px color-mix(in srgb, var(--card-color) 12%, transparent);
+	}
+
 	.flower-card.has-color:hover {
 		box-shadow: 0 8px 24px rgba(0,0,0,0.2), 0 0 24px color-mix(in srgb, var(--card-color) 25%, transparent);
-		border-color: color-mix(in srgb, var(--card-color) 35%, var(--glass-border));
+		border-color: color-mix(in srgb, var(--card-color) 55%, var(--glass-border));
 	}
 
 	.flower-card.selected {

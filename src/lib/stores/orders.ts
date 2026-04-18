@@ -38,6 +38,9 @@ function createOrderStore() {
 		async getItems(orderId: string): Promise<OrderItem[]> {
 			return commands.getOrderItems(orderId);
 		},
+		async getEarliestDate(): Promise<string | null> {
+			return commands.getEarliestOrderDate();
+		},
 	};
 }
 

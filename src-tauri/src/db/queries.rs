@@ -434,13 +434,23 @@ pub fn insert_order_item(
     let pack_count = payload.pack_count.unwrap_or(0);
     let stems_per_pack = payload.stems_per_pack.unwrap_or(0);
 
+    // sort_id: prefer the explicit value from the payload. If absent, fall
+    // back to a COALESCE lookup — if item_id happens to match an existing
+    // flower_sorts row, the link is restored automatically. This keeps
+    // older non-flower callers working without changes while making the
+    // flowers flow robust.
     conn.execute(
-        "INSERT INTO order_items (id, order_id, item_id, quantity, unit_price, specifications, pack_count, stems_per_pack)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO order_items
+            (id, order_id, item_id, sort_id, quantity, unit_price,
+             specifications, pack_count, stems_per_pack)
+         VALUES (?1, ?2, ?3,
+                 COALESCE(?4, (SELECT id FROM flower_sorts WHERE id = ?3)),
+                 ?5, ?6, ?7, ?8, ?9)",
         params![
             id,
             payload.order_id,
             payload.item_id,
+            payload.sort_id,
             payload.quantity,
             payload.unit_price,
             specs_str,
@@ -472,7 +482,8 @@ pub fn recalculate_order_total(conn: &Connection, order_id: &str) -> Result<(), 
 pub fn get_order_items(conn: &Connection, order_id: &str) -> Result<Vec<OrderItem>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, order_id, item_id, quantity, unit_price, specifications, created_at, pack_count, stems_per_pack
+            "SELECT id, order_id, item_id, quantity, unit_price, specifications, created_at,
+                    pack_count, stems_per_pack, sort_id
              FROM order_items WHERE order_id = ?1 ORDER BY created_at ASC",
         )
         .map_err(|e| e.to_string())?;
@@ -493,6 +504,7 @@ pub fn get_order_items(conn: &Connection, order_id: &str) -> Result<Vec<OrderIte
                 created_at: row.get(6)?,
                 pack_count: row.get::<_, i32>(7).unwrap_or(0),
                 stems_per_pack: row.get::<_, i32>(8).unwrap_or(0),
+                sort_id: row.get::<_, Option<String>>(9).unwrap_or(None),
             })
         })
         .map_err(|e| e.to_string())?
@@ -1118,6 +1130,18 @@ pub fn check_order_shortages(conn: &Connection) -> Result<Vec<OrderShortage>, St
         .map_err(|e| e.to_string())?;
 
     Ok(shortages)
+}
+
+/// Return the ISO-8601 timestamp of the earliest order, or `None` when
+/// the table is empty. Used to initialize the from-date in the
+/// "print registry" dialog.
+pub fn get_earliest_order_date(conn: &Connection) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT MIN(created_at) FROM orders",
+        [],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .map_err(|e| e.to_string())
 }
 
 // ============================================================

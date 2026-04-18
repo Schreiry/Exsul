@@ -130,6 +130,7 @@ pub fn run() {
             commands::orders::confirm_order_deadline,
             commands::orders::get_overdue_unconfirmed_orders,
             commands::orders::check_order_shortages,
+            commands::orders::get_earliest_order_date,
             // ── App Settings ──
             commands::app_settings::get_setting,
             commands::app_settings::set_setting,

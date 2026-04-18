@@ -289,6 +289,8 @@ export const commands = {
 		safeInvoke<string>('add_order_item', { payload }),
 	getOrderItems: (orderId: string) =>
 		safeInvoke<OrderItem[]>('get_order_items', { orderId }),
+	getEarliestOrderDate: () =>
+		safeInvoke<string | null>('get_earliest_order_date'),
 
 	// Audit
 	getAuditLogs: (filter?: AuditLogFilter) =>

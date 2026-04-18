@@ -7,6 +7,7 @@
 		flowerSorts: FlowerSort[];
 		onconfirm: (item: {
 			item_id: string;
+			sort_id: string;
 			quantity: number;
 			unit_price: number;
 			pack_count: number;
@@ -51,6 +52,7 @@
 		if (!selectedSort || quantity < 1 || isOverStock) return;
 		onconfirm({
 			item_id: selectedSort.id,
+			sort_id: selectedSort.id,
 			quantity,
 			unit_price: pricePerPack,
 			pack_count: quantity,

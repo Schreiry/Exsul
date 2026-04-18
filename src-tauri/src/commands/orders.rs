@@ -155,3 +155,12 @@ pub fn check_order_shortages(
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     crate::db::queries::check_order_shortages(&conn)
 }
+
+/// Timestamp of the earliest order in the database (ISO-8601 UTC).
+/// Used by the registry-print dialog to initialize the "from" date.
+/// Returns `None` when the orders table is empty.
+#[tauri::command]
+pub fn get_earliest_order_date(db: State<'_, Database>) -> Result<Option<String>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::get_earliest_order_date(&conn)
+}

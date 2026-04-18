@@ -187,6 +187,78 @@ const PRINT_DOC_CSS = `
 		color: #666;
 		text-align: right;
 	}
+
+	/* ── Registry (single-table across all orders) ─────────────── */
+	.print-registry-header {
+		margin-bottom: 12px;
+		padding-bottom: 6px;
+		border-bottom: 2.5px solid #111;
+	}
+	.print-registry-header h1 {
+		margin: 0 0 4px;
+		font-size: 20pt;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+	}
+	.print-registry-range {
+		font-size: 10pt;
+		color: #555;
+	}
+
+	table.print-registry {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 10pt;
+		margin-top: 6px;
+	}
+	/* repeat header on every printed page */
+	table.print-registry thead { display: table-header-group; }
+	table.print-registry tfoot { display: table-footer-group; }
+	table.print-registry thead th {
+		background: #e8e8e8;
+		color: #000;
+		font-weight: 700;
+		text-align: left;
+		padding: 6px 8px;
+		border: 1px solid #777;
+		white-space: nowrap;
+	}
+	table.print-registry tbody td {
+		padding: 5px 8px;
+		border: 1px solid #bbb;
+		vertical-align: top;
+		word-break: break-word;
+	}
+	table.print-registry tbody tr { page-break-inside: avoid; break-inside: avoid; }
+	table.print-registry tr.order-subtotal-row td {
+		background: #f0f0f0;
+		font-weight: 700;
+		text-align: right;
+		border-top: 1.5px solid #555;
+	}
+	table.print-registry .reg-num   { width: 28px; text-align: center; }
+	table.print-registry .reg-date  { width: 88px; white-space: nowrap; }
+	table.print-registry .reg-cust  { min-width: 140px; font-weight: 600; }
+	table.print-registry .reg-sort  { min-width: 120px; }
+	table.print-registry .reg-qty   { width: 56px; text-align: center; }
+	table.print-registry .reg-price { width: 88px; text-align: right; white-space: nowrap; }
+	table.print-registry .reg-total { width: 96px; text-align: right; font-weight: 700; white-space: nowrap; }
+	table.print-registry .reg-status { width: 92px; white-space: nowrap; }
+	table.print-registry .reg-empty  { color: #888; font-style: italic; text-align: center; }
+
+	.print-registry-footer {
+		margin-top: 10px;
+		padding: 10px 14px;
+		border-top: 2.5px solid #111;
+		display: flex;
+		justify-content: space-between;
+		align-items: baseline;
+		font-size: 12pt;
+	}
+	.print-registry-footer .grand {
+		font-size: 14pt;
+		font-weight: 700;
+	}
 `;
 
 function escapeHtml(s: string): string {
@@ -218,7 +290,9 @@ function resolveItemName(
 	flowerSorts: FlowerSort[],
 	inventoryItems: Item[]
 ): { name: string; variety?: string } {
-	const sort = flowerSorts.find((s) => s.id === item.item_id);
+	// Prefer the explicit sort_id link (reliable since migration 014).
+	// Fall back to item_id for legacy data where the link was never written.
+	const sort = flowerSorts.find((s) => s.id === item.sort_id || s.id === item.item_id);
 	if (sort) return { name: sort.name, variety: sort.variety };
 	const inv = inventoryItems.find((i) => i.id === item.item_id);
 	return { name: inv?.name ?? item.item_id };
@@ -296,7 +370,7 @@ function renderItemsTable(
 	let subtotal = 0;
 	const rows = items
 		.map((it, idx) => {
-			const sort = flowerSorts.find((s) => s.id === it.item_id);
+			const sort = flowerSorts.find((s) => s.id === it.sort_id || s.id === it.item_id);
 			const { name, variety } = resolveItemName(it, flowerSorts, inventoryItems);
 			const calc = computeLine(it, sort, constants);
 			subtotal += calc.lineTotal;
@@ -494,9 +568,9 @@ export async function printAllOrders(
 		grandTotal += orderTotal;
 
 		for (const it of items) {
-			const sort = flowerSorts.find((s) => s.id === it.item_id);
+			const sort = flowerSorts.find((s) => s.id === it.sort_id || s.id === it.item_id);
 			const calc = computeLine(it, sort, constants);
-			const key = it.item_id;
+			const key = it.sort_id ?? it.item_id;
 			const label = sort
 				? sort.variety
 					? `${sort.name} — ${sort.variety}`
@@ -582,4 +656,163 @@ export async function printAllOrders(
 
 	const body = top + sections.join('') + summary + footer;
 	printViaIframe(t('print_consolidated_title'), body);
+}
+
+// ────────────────────────────────────────────────────────────────
+// Registry print — one unified table across all selected orders.
+//
+// Unlike `printAllOrders` (which renders each order as its own
+// section with a forced page-break), this emits a single HTML table
+// where each row is an order-item. The "date / customer / status"
+// cells span all rows for a given order (rowspan = items.length).
+// The thead/tfoot use `display: table-*-group` so they repeat on
+// every printed page — critical for readability in long registries.
+// ────────────────────────────────────────────────────────────────
+function formatDateShort(iso?: string): string {
+	if (!iso) return '';
+	try {
+		return new Date(iso).toLocaleDateString('ru-RU', {
+			year: '2-digit',
+			month: '2-digit',
+			day: '2-digit',
+		});
+	} catch {
+		return iso;
+	}
+}
+
+function translateStatus(status: string, t: TranslateFn): string {
+	const key = `status_${status}`;
+	const translated = t(key);
+	// Fall back to the raw status if translation key is missing.
+	return translated === key ? status : translated;
+}
+
+export async function printOrdersRegistry(
+	ordersList: Order[],
+	getItems: GetItemsFn,
+	flowerSorts: FlowerSort[],
+	inventoryItems: Item[],
+	constants: FlowerConstants,
+	currencyCode: string,
+	t: TranslateFn,
+	range?: { from: string; to: string }
+): Promise<void> {
+	// Pre-fetch all items in parallel, preserving input order.
+	const pairs = await Promise.all(
+		ordersList.map(async (o) => ({ order: o, items: await getItems(o.id) }))
+	);
+
+	const rows: string[] = [];
+	let grandTotal = 0;
+	let rowIdx = 0;
+
+	for (const { order, items } of pairs) {
+		const dateShort = escapeHtml(formatDateShort(order.created_at));
+		const customer = escapeHtml(order.customer_name || '—');
+		const statusLabel = escapeHtml(translateStatus(order.status, t));
+		let orderSubtotal = 0;
+
+		if (items.length === 0) {
+			rowIdx++;
+			rows.push(`
+				<tr>
+					<td class="reg-num">${rowIdx}</td>
+					<td class="reg-date">${dateShort}</td>
+					<td class="reg-cust">${customer}</td>
+					<td class="reg-sort reg-empty">—</td>
+					<td class="reg-qty">—</td>
+					<td class="reg-qty">—</td>
+					<td class="reg-price">—</td>
+					<td class="reg-total">${formatMoney(0, currencyCode)}</td>
+					<td class="reg-status">${statusLabel}</td>
+				</tr>
+			`);
+			continue;
+		}
+
+		items.forEach((it, i) => {
+			rowIdx++;
+			const sort = flowerSorts.find((s) => s.id === it.sort_id || s.id === it.item_id);
+			const { name, variety } = resolveItemName(it, flowerSorts, inventoryItems);
+			const calc = computeLine(it, sort, constants);
+			orderSubtotal += calc.lineTotal;
+			const sortLabel = variety
+				? `${escapeHtml(name)} — ${escapeHtml(variety)}`
+				: escapeHtml(name);
+			const isFirst = i === 0;
+			const rowspan = items.length;
+			rows.push(`
+				<tr>
+					<td class="reg-num">${rowIdx}</td>
+					${isFirst ? `<td class="reg-date" rowspan="${rowspan}">${dateShort}</td>` : ''}
+					${isFirst ? `<td class="reg-cust" rowspan="${rowspan}">${customer}</td>` : ''}
+					<td class="reg-sort">${sortLabel}</td>
+					<td class="reg-qty">${calc.packCount}</td>
+					<td class="reg-qty">${calc.stemsPerPack}</td>
+					<td class="reg-price">${formatMoney(calc.pricePerPack, currencyCode)}</td>
+					<td class="reg-total">${formatMoney(calc.lineTotal, currencyCode)}</td>
+					${isFirst ? `<td class="reg-status" rowspan="${rowspan}">${statusLabel}</td>` : ''}
+				</tr>
+			`);
+		});
+
+		const finalTotal = order.total_amount > 0 ? order.total_amount : orderSubtotal;
+		grandTotal += finalTotal;
+		rows.push(`
+			<tr class="order-subtotal-row">
+				<td colspan="7">${escapeHtml(t('print_summary'))}:</td>
+				<td class="reg-total">${formatMoney(finalTotal, currencyCode)}</td>
+				<td></td>
+			</tr>
+		`);
+	}
+
+	const rangeLine =
+		range && (range.from || range.to)
+			? `<div class="print-registry-range">${escapeHtml(t('print_registry_period'))}: ${escapeHtml(range.from)} — ${escapeHtml(range.to)}</div>`
+			: '';
+
+	const header = `
+		<div class="print-registry-header">
+			<h1>${escapeHtml(t('print_registry_title'))}</h1>
+			${rangeLine}
+			<div class="print-header-date">${escapeHtml(t('print_date'))}: ${escapeHtml(formatDateTime(new Date().toISOString()))}</div>
+		</div>
+	`;
+
+	const tableHtml = `
+		<table class="print-registry">
+			<thead>
+				<tr>
+					<th class="reg-num">#</th>
+					<th class="reg-date">${escapeHtml(t('label_order_date'))}</th>
+					<th class="reg-cust">${escapeHtml(t('label_customer_name'))}</th>
+					<th class="reg-sort">${escapeHtml(t('label_sort_col'))}</th>
+					<th class="reg-qty">${escapeHtml(t('label_pack_count'))}</th>
+					<th class="reg-qty">${escapeHtml(t('label_stems_per_pack'))}</th>
+					<th class="reg-price">${escapeHtml(t('label_price_per_pack'))}</th>
+					<th class="reg-total">${escapeHtml(t('print_summary'))}</th>
+					<th class="reg-status">${escapeHtml(t('label_status_col'))}</th>
+				</tr>
+			</thead>
+			<tbody>
+				${
+					rows.length === 0
+						? `<tr><td colspan="9" class="reg-empty" style="padding:24px;">${escapeHtml(t('print_dialog_no_orders'))}</td></tr>`
+						: rows.join('')
+				}
+			</tbody>
+		</table>
+	`;
+
+	const totalsFooter = `
+		<div class="print-registry-footer">
+			<span>${escapeHtml(t('print_total_orders'))}: <strong>${ordersList.length}</strong></span>
+			<span class="grand">${escapeHtml(t('print_registry_grand_total'))}: ${formatMoney(grandTotal, currencyCode)}</span>
+		</div>
+	`;
+
+	const body = header + tableHtml + totalsFooter;
+	printViaIframe(t('print_registry_title'), body);
 }

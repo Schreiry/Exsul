@@ -72,6 +72,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "data_reset",
         sql: include_str!("../../migrations/013_data_reset.sql"),
     },
+    Migration {
+        version: 14,
+        name: "orders_sort_id_backfill",
+        sql: include_str!("../../migrations/014_orders_sort_id_backfill.sql"),
+    },
 ];
 
 /// Execute a migration's SQL idempotently:

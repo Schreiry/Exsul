@@ -47,11 +47,13 @@
 
 	let showActions = $derived(hovered || longPressed);
 
-	let cardBg = $derived(
-		item.card_color
-			? `background: linear-gradient(135deg, ${item.card_color}22 0%, var(--glass-bg) 60%);`
-			: undefined
+	// Publish the chosen card color as a CSS variable so the gradient,
+	// border tint and hover glow can share it via color-mix() in CSS.
+	// Keeping JS tiny here avoids drift between static and hover rules.
+	let cardStyle = $derived(
+		item.card_color ? `--card-color: ${item.card_color};` : undefined
 	);
+	let hasColor = $derived(!!item.card_color);
 
 	// ── Touch: long-press detection ────────────────────────────
 	function onTouchStart() {
@@ -111,9 +113,10 @@
 <div
 	class="glass-card"
 	class:clickable={!!onclick}
+	class:has-color={hasColor}
 	role={onclick ? 'button' : undefined}
 	tabindex={onclick ? 0 : undefined}
-	style={cardBg}
+	style={cardStyle}
 	onclick={() => { if (!longPressed) onclick?.(); }}
 	onkeydown={(e) => e.key === 'Enter' && onclick?.()}
 	onmouseenter={() => (hovered = true)}
@@ -221,6 +224,28 @@
 	.glass-card:hover {
 		transform: translateY(-4px) scale(1.012);
 		box-shadow: var(--glass-shadow-hover);
+	}
+
+	/* Colored static tint: noticeably pigmented so the assigned color
+	   reads even against a vibrant theme, yet still sits on the glass
+	   layer so text stays legible. Uses color-mix so it's theme-aware. */
+	.glass-card.has-color {
+		background:
+			linear-gradient(135deg,
+				color-mix(in srgb, var(--card-color) 30%, var(--glass-bg)) 0%,
+				color-mix(in srgb, var(--card-color) 8%, var(--glass-bg)) 100%);
+		border-color: color-mix(in srgb, var(--card-color) 38%, var(--glass-border));
+		box-shadow:
+			var(--glass-shadow),
+			inset 0 1px 0 color-mix(in srgb, var(--card-color) 20%, transparent),
+			0 2px 12px color-mix(in srgb, var(--card-color) 12%, transparent);
+	}
+
+	.glass-card.has-color:hover {
+		box-shadow:
+			var(--glass-shadow-hover),
+			0 0 28px color-mix(in srgb, var(--card-color) 24%, transparent);
+		border-color: color-mix(in srgb, var(--card-color) 55%, var(--glass-border));
 	}
 
 	.glass-card:active {
