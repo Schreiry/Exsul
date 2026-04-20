@@ -60,8 +60,12 @@ function createFlowerSortsStore() {
 			await commands.adjustFlowerStock(id, rawDelta, pkgDelta);
 			await this.load();
 		},
-		async packageFlowers(sortId: string, packCount: number): Promise<PackageResult> {
-			const result = await commands.packageFlowers(sortId, packCount);
+		async packageFlowers(
+			sortId: string,
+			packCount: number,
+			orderId?: string
+		): Promise<PackageResult> {
+			const result = await commands.packageFlowers(sortId, packCount, orderId);
 			update((sorts) =>
 				sorts.map((s) =>
 					s.id === sortId
@@ -91,6 +95,19 @@ function createFlowerSortsStore() {
 				sorts.map((s) => (s.id === sortId ? { ...s, photo_path: path } : s))
 			);
 			return path;
+		},
+		// ── Deletion ──
+		async deletePackagingEntry(id: string): Promise<void> {
+			await commands.deletePackagingEntry(id);
+			await this.load();
+		},
+		async deleteAllPackaging(): Promise<number> {
+			const count = await commands.deleteAllPackaging();
+			await this.load();
+			return count;
+		},
+		async deletePackAssignment(id: string): Promise<void> {
+			await commands.deletePackAssignment(id);
 		},
 	};
 }

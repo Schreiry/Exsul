@@ -76,11 +76,17 @@ pub fn set_flower_constants(
 
 /// Consume raw stems from a flower sort and produce packs.
 /// Returns the updated stock values so the frontend can optimistically update.
+///
+/// When `order_id` is supplied, the resulting `packaging_log` row is
+/// immediately linked to that order so the warehouse ↔ orders chain is
+/// queryable in both directions. Callers that just package free stock
+/// (no order yet) simply pass `None` and the column stays NULL.
 #[tauri::command]
 pub fn package_flowers(
     db: State<'_, Database>,
     sort_id: String,
     pack_count: i32,
+    order_id: Option<String>,
 ) -> Result<PackageResult, String> {
     if pack_count <= 0 {
         return Err("pack_count must be > 0".to_string());
@@ -116,7 +122,14 @@ pub fn package_flowers(
     }
 
     let log_id = Uuid::new_v4().to_string();
-    crate::db::queries::package_flowers(&conn, &log_id, &sort_id, pack_count, flowers_per_pack)
+    crate::db::queries::package_flowers(
+        &conn,
+        &log_id,
+        &sort_id,
+        pack_count,
+        flowers_per_pack,
+        order_id.as_deref(),
+    )
 }
 
 // ── Packaging Log ────────────────────────────────────────────
@@ -128,6 +141,47 @@ pub fn get_packaging_log(
 ) -> Result<Vec<PackagingLogEntry>, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     crate::db::queries::get_packaging_log(&conn, limit)
+}
+
+#[tauri::command]
+pub fn get_packaging_log_by_sort(
+    db: State<'_, Database>,
+    sort_id: String,
+    limit: Option<i64>,
+) -> Result<Vec<PackagingLogEntry>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::get_packaging_log_by_sort(&conn, &sort_id, limit)
+}
+
+/// Packaging entries linked to a specific order. Used by the order print
+/// pipeline as the authoritative source of sort/pack/stems when `order_items`
+/// is missing or incomplete (legacy orders, or orders created before
+/// packaging→order linking landed).
+#[tauri::command]
+pub fn get_packaging_log_by_order(
+    db: State<'_, Database>,
+    order_id: String,
+) -> Result<Vec<PackagingLogEntry>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::get_packaging_log_by_order(&conn, &order_id)
+}
+
+/// Delete a packaging_log entry and roll back the stock movement
+/// (pkg_stock -= pack_count, raw_stock += stems_used). Records the inverse
+/// move in `greenhouse_harvest_log` as a correction. Fails if pkg_stock
+/// would go negative (i.e. some of those packs have already shipped).
+#[tauri::command]
+pub fn delete_packaging_entry(db: State<'_, Database>, id: String) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::delete_packaging_entry(&conn, &id)
+}
+
+/// Delete every packaging_log entry, rolling back each stock movement.
+/// Aborts atomically if any single rollback would underflow pkg_stock.
+#[tauri::command]
+pub fn delete_all_packaging(db: State<'_, Database>) -> Result<i64, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::delete_all_packaging(&conn)
 }
 
 // ── Pack Assignments (Task 9) ─────────────────────────────────
@@ -166,4 +220,12 @@ pub fn update_pack_status(
 ) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     crate::db::queries::update_pack_status(&conn, &id, &status)
+}
+
+/// Remove a pack-assignment row. pkg_stock stays unchanged: this only
+/// releases the reservation — the physical packs remain on the warehouse.
+#[tauri::command]
+pub fn delete_pack_assignment(db: State<'_, Database>, id: String) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::delete_pack_assignment(&conn, &id)
 }

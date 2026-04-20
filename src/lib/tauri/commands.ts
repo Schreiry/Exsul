@@ -291,6 +291,8 @@ export const commands = {
 		safeInvoke<OrderItem[]>('get_order_items', { orderId }),
 	getEarliestOrderDate: () =>
 		safeInvoke<string | null>('get_earliest_order_date'),
+	deleteOrder: (orderId: string) => safeInvoke<void>('delete_order', { orderId }),
+	deleteAllOrders: () => safeInvoke<number>('delete_all_orders'),
 
 	// Audit
 	getAuditLogs: (filter?: AuditLogFilter) =>
@@ -323,10 +325,17 @@ export const commands = {
 		safeInvoke<void>('set_flower_constants', { constants }),
 
 	// Flower ERP — Packaging
-	packageFlowers: (sortId: string, packCount: number) =>
-		safeInvoke<PackageResult>('package_flowers', { sortId, packCount }),
+	packageFlowers: (sortId: string, packCount: number, orderId?: string) =>
+		safeInvoke<PackageResult>('package_flowers', { sortId, packCount, orderId }),
 	getPackagingLog: (limit?: number) =>
 		safeInvoke<PackagingLogEntry[]>('get_packaging_log', { limit }),
+	getPackagingLogBySort: (sortId: string, limit?: number) =>
+		safeInvoke<PackagingLogEntry[]>('get_packaging_log_by_sort', { sortId, limit }),
+	getPackagingLogByOrder: (orderId: string) =>
+		safeInvoke<PackagingLogEntry[]>('get_packaging_log_by_order', { orderId }),
+	deletePackagingEntry: (id: string) =>
+		safeInvoke<void>('delete_packaging_entry', { id }),
+	deleteAllPackaging: () => safeInvoke<number>('delete_all_packaging'),
 
 	// WebSocket P2P
 	startWsServer: () => safeInvoke<void>('start_ws_server'),
@@ -349,6 +358,8 @@ export const commands = {
 		safeInvoke<PackAssignment[]>('get_pack_assignments', { orderId }),
 	updatePackStatus: (id: string, status: PackStatus) =>
 		safeInvoke<void>('update_pack_status', { id, status }),
+	deletePackAssignment: (id: string) =>
+		safeInvoke<void>('delete_pack_assignment', { id }),
 
 	// Greenhouse
 	saveFlowerPhoto: (sortId: string, sourcePath: string) =>

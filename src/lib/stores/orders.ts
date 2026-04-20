@@ -41,6 +41,15 @@ function createOrderStore() {
 		async getEarliestDate(): Promise<string | null> {
 			return commands.getEarliestOrderDate();
 		},
+		async remove(orderId: string): Promise<void> {
+			await commands.deleteOrder(orderId);
+			await load();
+		},
+		async removeAll(): Promise<number> {
+			const count = await commands.deleteAllOrders();
+			await load();
+			return count;
+		},
 	};
 }
 

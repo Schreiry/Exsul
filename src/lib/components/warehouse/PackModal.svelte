@@ -17,6 +17,9 @@
 	let packCount = $state(1);
 	let searchQuery = $state('');
 
+	// Price per pack: manually overridable; null = use autoPricePerPack
+	let pricePerPackOverride = $state<number | null>(null);
+
 	// Order form (optional)
 	let customerName = $state('');
 	let customerPhone = $state('');
@@ -35,7 +38,17 @@
 	);
 	const stemsNeeded = $derived(packCount * fpp);
 	const stockOk = $derived(!selected || stemsNeeded <= selected.raw_stock);
-	const autoPrice = $derived(packCount * ($flowerConstants.price_per_pack ?? 0));
+
+	// Autofill price/pack from sort's per-stem price; fallback to global constant.
+	const autoPricePerPack = $derived(
+		selected && selected.sell_price_stem > 0
+			? selected.sell_price_stem * fpp
+			: ($flowerConstants.price_per_pack ?? 0)
+	);
+	const effectivePricePerPack = $derived(
+		pricePerPackOverride !== null ? pricePerPackOverride : autoPricePerPack
+	);
+	const autoPrice = $derived(packCount * effectivePricePerPack);
 
 	const visibleSorts = $derived(() => {
 		const q = searchQuery.toLowerCase();
@@ -44,11 +57,12 @@
 		);
 	});
 
-	// When selected sort changes, reset count to 1
+	// When selected sort changes, reset count and price override
 	function selectSort(sort: FlowerSort) {
 		if (sort.raw_stock === 0) return;
 		selected = sort;
 		packCount = 1;
+		pricePerPackOverride = null;
 		error = '';
 	}
 
@@ -57,12 +71,15 @@
 		saving = true;
 		error = '';
 		try {
-			// 1. Package flowers
-			await flowerSorts.packageFlowers(selected.id, packCount);
+			const hasCustomer = customerName.trim().length > 0;
+			const sortId = selected.id;
+			const currentFpp = fpp;
+			const currentPricePerPack = effectivePricePerPack;
+			let orderId: string | undefined;
 
-			// 2. Create order if name provided
-			if (customerName.trim()) {
-				const orderId = await commands.createOrder({
+			// 1. Create order FIRST (so packaging_log can be linked)
+			if (hasCustomer) {
+				orderId = await commands.createOrder({
 					customer_name: customerName.trim(),
 					customer_email: customerEmail.trim() || undefined,
 					customer_phone: customerPhone.trim() || undefined,
@@ -76,6 +93,34 @@
 					undefined,
 					packCount
 				);
+			}
+
+			// 2. Package flowers — link to order when available
+			await flowerSorts.packageFlowers(sortId, packCount, orderId);
+
+			// 3. Write order_items + pack_assignment so the warehouse ↔ order
+			//    chain is complete and prints render correctly.
+			if (orderId) {
+				await orders.addItem({
+					order_id: orderId,
+					item_id: sortId,
+					sort_id: sortId,
+					quantity: packCount,
+					unit_price: currentPricePerPack,
+					pack_count: packCount,
+					stems_per_pack: currentFpp,
+				});
+				try {
+					await commands.createPackAssignment({
+						sort_id: sortId,
+						order_id: orderId,
+						pack_count: packCount,
+						stems_per_pack: currentFpp,
+					});
+				} catch (e) {
+					// Pack assignment is secondary — log but don't fail the flow.
+					console.warn('Failed to create pack assignment:', e);
+				}
 				await orders.load();
 			}
 
@@ -83,6 +128,7 @@
 			// Reset form
 			selected = null;
 			packCount = 1;
+			pricePerPackOverride = null;
 			customerName = ''; customerPhone = ''; customerEmail = '';
 			deliveryAddress = ''; deadline = ''; notes = '';
 			ondone?.();
@@ -196,6 +242,32 @@
 					<div class="stems-info" class:stems-err={!stockOk}>
 						<span>{stemsNeeded} стеблей</span>
 						<span class="stems-available">{!stockOk ? '⚠ недостаточно' : `из ${selected.raw_stock}`}</span>
+					</div>
+
+					<div class="price-row">
+						<label class="field-label" for="price-per-pack-input">Цена за упаковку</label>
+						<div class="price-input-wrap">
+							<input
+								id="price-per-pack-input"
+								class="field-input price-input"
+								type="number"
+								min="0"
+								step="0.01"
+								value={effectivePricePerPack}
+								oninput={(e) => {
+									const v = (e.currentTarget as HTMLInputElement).value;
+									pricePerPackOverride = v === '' ? null : Number(v);
+								}}
+							/>
+							{#if pricePerPackOverride !== null && pricePerPackOverride !== autoPricePerPack}
+								<button
+									type="button"
+									class="price-reset"
+									title="Сбросить к авто"
+									onclick={() => (pricePerPackOverride = null)}
+								>↺</button>
+							{/if}
+						</div>
 					</div>
 
 					{#if autoPrice > 0}
@@ -467,6 +539,23 @@
 
 	.auto-price { font-size: 0.82rem; color: var(--color-outline); margin: 0; }
 	.auto-price strong { color: var(--color-primary); }
+
+	.price-row { display: flex; flex-direction: column; gap: 3px; }
+	.price-input-wrap { position: relative; display: flex; align-items: center; }
+	.price-input { padding-right: 34px; font-weight: 600; }
+	.price-reset {
+		position: absolute;
+		right: 6px;
+		background: none;
+		border: none;
+		color: var(--color-outline);
+		cursor: pointer;
+		padding: 2px 6px;
+		border-radius: 6px;
+		font-size: 0.95rem;
+		line-height: 1;
+	}
+	.price-reset:hover { color: var(--color-primary); background: var(--glass-bg-hover); }
 
 	/* Order section */
 	.order-section { font-size: 0.85rem; }

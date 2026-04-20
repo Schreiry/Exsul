@@ -12,7 +12,14 @@
 	import AddItemModal from '$lib/components/orders/AddItemModal.svelte';
 	import PrintAllOrdersDialog from '$lib/components/orders/PrintAllOrdersDialog.svelte';
 	import { formatCountdown } from '$lib/utils/countdown';
-	import type { CreateOrderPayload, AddOrderItemPayload, OrderStatus, Order } from '$lib/tauri/types';
+	import type {
+		CreateOrderPayload,
+		AddOrderItemPayload,
+		OrderStatus,
+		Order,
+		PackAssignment,
+		PackagingLogEntry,
+	} from '$lib/tauri/types';
 
 	const isFlowers = $derived($preset === 'flowers');
 
@@ -126,8 +133,60 @@
 	}
 
 	async function printPreorder(order: typeof filteredOrders[0]) {
-		const items = await orders.getItems(order.id);
-		printSingleOrder(order, items, $flowerSorts, $inventory, $flowerConstants, $globalCurrency, $t);
+		// For flowers mode, pull both pack_assignments (reservation side) and
+		// packaging_log (production-audit side) so the printer can synthesize
+		// a full row set even when order_items is empty/incomplete.
+		const [items, packAssignments, packagingLog] = await Promise.all([
+			orders.getItems(order.id),
+			isFlowers
+				? commands.getPackAssignments(order.id).catch((e) => {
+						console.warn('Failed to load pack assignments for print:', e);
+						return [];
+					})
+				: Promise.resolve(undefined),
+			isFlowers
+				? commands.getPackagingLogByOrder(order.id).catch((e) => {
+						console.warn('Failed to load packaging log for print:', e);
+						return [];
+					})
+				: Promise.resolve([]),
+		]);
+		printSingleOrder(
+			order,
+			items,
+			$flowerSorts,
+			$inventory,
+			$flowerConstants,
+			$globalCurrency,
+			$t,
+			{ packAssignments, packagingLog }
+		);
+	}
+
+	async function handleDeleteOrder(order: Order) {
+		const prompt =
+			order.status === 'completed'
+				? $t('confirm_delete_completed_order')
+				: $t('confirm_delete_order').replace('{name}', order.customer_name);
+		if (!confirm(prompt)) return;
+		try {
+			await orders.remove(order.id);
+			if (detailOrder?.id === order.id) detailOrder = null;
+		} catch (e) {
+			console.error('Failed to delete order:', e);
+			alert(String(e));
+		}
+	}
+
+	async function handleClearAllOrders() {
+		const confirmation = prompt($t('confirm_delete_all_orders'));
+		if (confirmation !== 'DELETE') return;
+		try {
+			await orders.removeAll();
+		} catch (e) {
+			console.error('Failed to clear all orders:', e);
+			alert(String(e));
+		}
 	}
 
 	async function openPrintDialog() {
@@ -159,6 +218,33 @@
 			// The dialog already warned about an empty range; nothing to print.
 			return;
 		}
+
+		// Pre-fetch pack_assignments and packaging_log for every order in one
+		// parallel burst. The print renderer uses packaging_log to reconstruct
+		// rows when order_items is empty (legacy orders), and pack_assignments
+		// to fill the "Reserved" column — without both the registry prints
+		// blank cells the user can't interpret.
+		const packAssignmentsByOrder: Record<string, PackAssignment[]> = {};
+		const packagingLogByOrder: Record<string, PackagingLogEntry[]> = {};
+		if (isFlowers) {
+			await Promise.all(
+				subset.map(async (o) => {
+					const [pa, pl] = await Promise.all([
+						commands.getPackAssignments(o.id).catch((e) => {
+							console.warn('Failed to load pack assignments:', e);
+							return [];
+						}),
+						commands.getPackagingLogByOrder(o.id).catch((e) => {
+							console.warn('Failed to load packaging log:', e);
+							return [];
+						}),
+					]);
+					packAssignmentsByOrder[o.id] = pa;
+					packagingLogByOrder[o.id] = pl;
+				})
+			);
+		}
+
 		await printOrdersRegistry(
 			subset,
 			(id) => orders.getItems(id),
@@ -167,7 +253,8 @@
 			$flowerConstants,
 			$globalCurrency,
 			$t,
-			{ from: range.dateFrom, to: range.dateTo }
+			{ from: range.dateFrom, to: range.dateTo },
+			{ packAssignmentsByOrder, packagingLogByOrder }
 		);
 	}
 

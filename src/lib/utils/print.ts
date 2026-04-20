@@ -1,8 +1,149 @@
-import type { Order, OrderItem, FlowerSort, FlowerConstants, Item } from '$lib/tauri/types';
+import type {
+	Order,
+	OrderItem,
+	FlowerSort,
+	FlowerConstants,
+	Item,
+	PackAssignment,
+	PackagingLogEntry,
+} from '$lib/tauri/types';
 import { computeLine, resolveItemName } from '$lib/utils/orderLine';
 
 type TranslateFn = (key: string) => string;
 type GetItemsFn = (orderId: string) => Promise<OrderItem[]>;
+
+export interface PrintSingleOptions {
+	packAssignments?: PackAssignment[];
+	packagingLog?: PackagingLogEntry[];
+}
+
+export interface PrintMultiOptions {
+	packAssignmentsByOrder?: Record<string, PackAssignment[]>;
+	packagingLogByOrder?: Record<string, PackagingLogEntry[]>;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Normalized print row. The print layout — both single-order and
+// registry — renders one of these per line. Rows are built by
+// merging three sources, in this order of preference:
+//
+//   1. order_items    — primary source when present (carries the
+//                       authoritative unit_price)
+//   2. packaging_log  — primary source when order_items is empty
+//                       (reconstructs sort/packs/stems/price from
+//                       the warehouse event log and flower_sorts)
+//   3. order snapshot — last-resort fallback (pack_count_ordered
+//                       + total_amount) so the sheet is never blank
+//
+// This is what lets old/broken orders still print something useful,
+// and what makes the "warehouse→order chain" visible in one place.
+// ────────────────────────────────────────────────────────────────
+interface PrintRow {
+	sortId: string | null;
+	sortName: string;
+	variety?: string;
+	packCount: number;
+	stemsPerPack: number;
+	pricePerPack: number;
+	pricePerStem: number;
+	lineTotal: number;
+	reservedPacks: number;
+	source: 'order_item' | 'packaging_log' | 'legacy';
+	packagedAt?: string;
+}
+
+function buildPrintRows(
+	order: Order,
+	items: OrderItem[],
+	flowerSorts: FlowerSort[],
+	inventoryItems: Item[],
+	constants: FlowerConstants,
+	packagingLog: PackagingLogEntry[] = [],
+	packAssignments: PackAssignment[] = []
+): PrintRow[] {
+	const reservedBySort = new Map<string, number>();
+	for (const a of packAssignments) {
+		reservedBySort.set(a.sort_id, (reservedBySort.get(a.sort_id) ?? 0) + a.pack_count);
+	}
+
+	// Path 1: authoritative order_items. We still enrich each row with
+	// packaging_log info (so missing unit_price can fall back to the sort's
+	// sell_price_stem via computeLine, and reserved pulls from assignments).
+	if (items.length > 0) {
+		return items.map((it) => {
+			const sort = flowerSorts.find((s) => s.id === it.sort_id || s.id === it.item_id);
+			const { name, variety } = resolveItemName(it, flowerSorts, inventoryItems);
+			const calc = computeLine(it, sort, constants);
+			const sortId = it.sort_id ?? sort?.id ?? null;
+			return {
+				sortId,
+				sortName: name,
+				variety,
+				packCount: calc.packCount,
+				stemsPerPack: calc.stemsPerPack,
+				pricePerPack: calc.pricePerPack,
+				pricePerStem: calc.pricePerStem,
+				lineTotal: calc.lineTotal,
+				reservedPacks: sortId ? (reservedBySort.get(sortId) ?? 0) : 0,
+				source: 'order_item',
+			};
+		});
+	}
+
+	// Path 2: reconstruct from packaging_log. The warehouse always writes
+	// one row here per packaging event, so this is effectively the
+	// production audit trail — far more reliable than whatever ended up
+	// in order_items for legacy orders.
+	if (packagingLog.length > 0) {
+		return packagingLog.map((pl) => {
+			const sort = flowerSorts.find((s) => s.id === pl.sort_id);
+			const fallbackStems =
+				sort?.flowers_per_pack_override ?? constants.flowers_per_pack ?? 1;
+			const stemsPerPack = pl.stems_per_pack > 0 ? pl.stems_per_pack : fallbackStems;
+			const pricePerStem = pl.sell_price_stem > 0
+				? pl.sell_price_stem
+				: (sort?.sell_price_stem ?? 0);
+			const pricePerPack = pricePerStem * stemsPerPack;
+			const lineTotal = pl.pack_count * pricePerPack;
+			return {
+				sortId: pl.sort_id,
+				sortName: pl.sort_name || sort?.name || '—',
+				variety: pl.variety ?? sort?.variety,
+				packCount: pl.pack_count,
+				stemsPerPack,
+				pricePerPack,
+				pricePerStem,
+				lineTotal,
+				reservedPacks: reservedBySort.get(pl.sort_id) ?? 0,
+				source: 'packaging_log',
+				packagedAt: pl.created_at,
+			};
+		});
+	}
+
+	// Path 3: absolute fallback. Nothing in order_items, nothing in
+	// packaging_log — but the order itself may still carry a summary
+	// (pack_count_ordered / total_amount). Render a single grey row so
+	// the sheet doesn't look broken.
+	if (order.pack_count_ordered > 0 || order.total_amount > 0) {
+		const packs = order.pack_count_ordered ?? 0;
+		const total = order.total_amount ?? 0;
+		return [
+			{
+				sortId: null,
+				sortName: '—',
+				packCount: packs,
+				stemsPerPack: 0,
+				pricePerPack: packs > 0 ? total / packs : 0,
+				pricePerStem: 0,
+				lineTotal: total,
+				reservedPacks: 0,
+				source: 'legacy',
+			},
+		];
+	}
+	return [];
+}
 
 // ────────────────────────────────────────────────────────────────
 // Why an iframe, not document.body injection:
@@ -189,6 +330,48 @@ const PRINT_DOC_CSS = `
 		text-align: right;
 	}
 
+	.print-warehouse {
+		margin-top: 14px;
+		padding: 10px 14px;
+		border: 1px solid #999;
+		background: #fafafa;
+	}
+	.print-warehouse h3 {
+		margin: 0 0 8px;
+		font-size: 12pt;
+		font-weight: 700;
+		letter-spacing: 0.02em;
+		text-transform: uppercase;
+		color: #333;
+	}
+	table.print-warehouse-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 10.5pt;
+	}
+	table.print-warehouse-table th,
+	table.print-warehouse-table td {
+		padding: 5px 8px;
+		border: 1px solid #bbb;
+		text-align: right;
+		white-space: nowrap;
+	}
+	table.print-warehouse-table th {
+		background: #e8e8e8;
+		color: #000;
+		font-weight: 700;
+	}
+	table.print-warehouse-table td.wh-name,
+	table.print-warehouse-table th.wh-name {
+		text-align: left;
+		white-space: normal;
+	}
+	table.print-warehouse-table tr.wh-deficit td { background: #fde0e0; }
+	table.print-warehouse-table tr.wh-deficit td.wh-deficit-cell {
+		color: #b91c1c;
+		font-weight: 700;
+	}
+
 	/* ── Registry (single-table across all orders) ─────────────── */
 	.print-registry-header {
 		margin-bottom: 12px;
@@ -319,39 +502,42 @@ function renderOrderHeader(order: Order, t: TranslateFn): string {
 }
 
 function renderItemsTable(
-	items: OrderItem[],
-	flowerSorts: FlowerSort[],
-	inventoryItems: Item[],
-	constants: FlowerConstants,
+	rows: PrintRow[],
 	currencyCode: string,
 	t: TranslateFn
 ): { html: string; subtotal: number } {
 	let subtotal = 0;
-	const rows = items
-		.map((it, idx) => {
-			const sort = flowerSorts.find((s) => s.id === it.sort_id || s.id === it.item_id);
-			const { name, variety } = resolveItemName(it, flowerSorts, inventoryItems);
-			const calc = computeLine(it, sort, constants);
-			subtotal += calc.lineTotal;
-			const productLabel = variety
-				? `${escapeHtml(name)} — ${escapeHtml(variety)}`
-				: escapeHtml(name);
+	const bodyRows = rows
+		.map((r, idx) => {
+			subtotal += r.lineTotal;
+			const productLabel = r.variety
+				? `${escapeHtml(r.sortName)} — ${escapeHtml(r.variety)}`
+				: escapeHtml(r.sortName);
+			const sourceTag = r.source === 'packaging_log'
+				? ` <span style="color:#888;font-size:9pt;font-weight:400;">${escapeHtml(
+						t('print_row_from_packaging') || 'из упаковки'
+					)}</span>`
+				: r.source === 'legacy'
+					? ` <span style="color:#b91c1c;font-size:9pt;font-weight:400;">${escapeHtml(
+							t('print_row_legacy') || 'архивный заказ'
+						)}</span>`
+					: '';
 			return `
 				<tr>
 					<td class="c-num">${idx + 1}</td>
-					<td class="c-name">${productLabel}</td>
-					<td class="c-qty">${calc.packCount}</td>
-					<td class="c-qty">${calc.stemsPerPack}</td>
-					<td class="c-price">${formatMoney(calc.pricePerStem, currencyCode)}</td>
-					<td class="c-price">${formatMoney(calc.pricePerPack, currencyCode)}</td>
-					<td class="c-total">${formatMoney(calc.lineTotal, currencyCode)}</td>
+					<td class="c-name">${productLabel}${sourceTag}</td>
+					<td class="c-qty">${r.packCount || '—'}</td>
+					<td class="c-qty">${r.stemsPerPack || '—'}</td>
+					<td class="c-price">${r.pricePerStem > 0 ? formatMoney(r.pricePerStem, currencyCode) : '—'}</td>
+					<td class="c-price">${r.pricePerPack > 0 ? formatMoney(r.pricePerPack, currencyCode) : '—'}</td>
+					<td class="c-total">${formatMoney(r.lineTotal, currencyCode)}</td>
 				</tr>
 			`;
 		})
 		.join('');
 
 	const emptyRow =
-		items.length === 0
+		rows.length === 0
 			? `<tr><td colspan="7" style="text-align:center;color:#888;padding:18px;">—</td></tr>`
 			: '';
 
@@ -368,11 +554,119 @@ function renderItemsTable(
 					<th class="c-total">${t('print_summary')}</th>
 				</tr>
 			</thead>
-			<tbody>${rows}${emptyRow}</tbody>
+			<tbody>${bodyRows}${emptyRow}</tbody>
 		</table>
 	`;
 
 	return { html, subtotal };
+}
+
+// ────────────────────────────────────────────────────────────────
+// Warehouse/greenhouse state block — prints the raw stock, pkg
+// stock, reserved packs (aggregated from pack_assignments) and
+// the deficit vs. the ordered pack count. Rendered only when the
+// caller passes pack assignments (flowers mode); otherwise the
+// block is omitted entirely.
+// ────────────────────────────────────────────────────────────────
+function renderWarehouseBlock(
+	printRows: PrintRow[],
+	flowerSorts: FlowerSort[],
+	packAssignments: PackAssignment[] | undefined,
+	t: TranslateFn
+): string {
+	if (!packAssignments) return '';
+
+	type Row = {
+		name: string;
+		variety: string | null;
+		rawStock: number;
+		pkgStock: number;
+		reserved: number;
+		needed: number;
+		deficit: number;
+		statusCounts: Record<string, number>;
+	};
+	const rows: Row[] = [];
+
+	// Aggregate by sort — one warehouse row per unique sort, even if the
+	// order has multiple print rows for it (e.g. split packaging events).
+	const bySort = new Map<string, { name: string; variety?: string; needed: number }>();
+	for (const r of printRows) {
+		if (!r.sortId) continue;
+		const existing = bySort.get(r.sortId);
+		if (existing) {
+			existing.needed += r.packCount;
+		} else {
+			bySort.set(r.sortId, {
+				name: r.sortName,
+				variety: r.variety,
+				needed: r.packCount,
+			});
+		}
+	}
+
+	for (const [sortId, agg] of bySort.entries()) {
+		const sort = flowerSorts.find((s) => s.id === sortId);
+		const linked = packAssignments.filter((a) => a.sort_id === sortId);
+		const reserved = linked.reduce((sum, a) => sum + a.pack_count, 0);
+		const statusCounts: Record<string, number> = { prepared: 0, loaded: 0, delivered: 0 };
+		for (const a of linked) {
+			statusCounts[a.status] = (statusCounts[a.status] ?? 0) + a.pack_count;
+		}
+		rows.push({
+			name: agg.name,
+			variety: agg.variety ?? null,
+			rawStock: sort?.raw_stock ?? 0,
+			pkgStock: sort?.pkg_stock ?? 0,
+			reserved,
+			needed: agg.needed,
+			deficit: Math.max(0, agg.needed - reserved),
+			statusCounts,
+		});
+	}
+
+	if (rows.length === 0) return '';
+
+	const body = rows
+		.map((r) => {
+			const productLabel = r.variety
+				? `${escapeHtml(r.name)} — ${escapeHtml(r.variety)}`
+				: escapeHtml(r.name);
+			const statusDetail =
+				r.reserved > 0
+					? ` <span style="color:#555;font-size:9.5pt;">(${escapeHtml(t('pack_status_prepared'))} ${r.statusCounts.prepared ?? 0}, ${escapeHtml(t('pack_status_loaded'))} ${r.statusCounts.loaded ?? 0}, ${escapeHtml(t('pack_status_delivered'))} ${r.statusCounts.delivered ?? 0})</span>`
+					: '';
+			return `
+				<tr class="${r.deficit > 0 ? 'wh-deficit' : ''}">
+					<td class="wh-name">${productLabel}</td>
+					<td>${r.rawStock}</td>
+					<td>${r.pkgStock}</td>
+					<td>${r.reserved}${statusDetail}</td>
+					<td>${r.needed}</td>
+					<td class="wh-deficit-cell">${r.deficit}</td>
+				</tr>
+			`;
+		})
+		.join('');
+
+	return `
+		<div class="print-warehouse">
+			<h3>${escapeHtml(t('section_warehouse_state'))}</h3>
+			<table class="print-warehouse-table">
+				<thead>
+					<tr>
+						<th class="wh-name">${escapeHtml(t('label_product'))}</th>
+						<th>${escapeHtml(t('label_raw_stock'))}</th>
+						<th>${escapeHtml(t('label_pkg_stock'))}</th>
+						<th>${escapeHtml(t('label_assigned_packs'))}</th>
+						<th>${escapeHtml(t('label_pack_count'))}</th>
+						<th>${escapeHtml(t('label_deficit'))}</th>
+					</tr>
+				</thead>
+				<tbody>${body}</tbody>
+			</table>
+		</div>
+	`;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -479,18 +773,30 @@ export function printSingleOrder(
 	inventoryItems: Item[],
 	constants: FlowerConstants,
 	currencyCode: string,
-	t: TranslateFn
+	t: TranslateFn,
+	opts: PrintSingleOptions = {}
 ): void {
 	const header = renderOrderHeader(order, t);
-	const { html, subtotal } = renderItemsTable(
+	const printRows = buildPrintRows(
+		order,
 		items,
 		flowerSorts,
 		inventoryItems,
 		constants,
-		currencyCode,
+		opts.packagingLog ?? [],
+		opts.packAssignments ?? []
+	);
+	const { html, subtotal } = renderItemsTable(printRows, currencyCode, t);
+	// Prefer the computed subtotal when order.total_amount is stale (common
+	// for legacy orders where total_amount wasn't re-aggregated) — but if the
+	// row set itself is empty/legacy, keep whatever the order carries.
+	const totalAmount = subtotal > 0 ? subtotal : order.total_amount;
+	const warehouse = renderWarehouseBlock(
+		printRows,
+		flowerSorts,
+		opts.packAssignments,
 		t
 	);
-	const totalAmount = order.total_amount > 0 ? order.total_amount : subtotal;
 
 	const body = `
 		${header}
@@ -499,6 +805,7 @@ export function printSingleOrder(
 			<span class="tot-label">${t('print_summary')}</span>
 			<span class="tot-val">${formatMoney(totalAmount, currencyCode)}</span>
 		</div>
+		${warehouse}
 		${order.notes ? `<div class="print-notes"><strong>${t('label_notes')}:</strong> ${escapeHtml(order.notes)}</div>` : ''}
 		<div class="print-footer">${t('print_date')}: ${formatDateTime(new Date().toISOString())}</div>
 	`;
@@ -514,7 +821,8 @@ export async function printAllOrders(
 	inventoryItems: Item[],
 	constants: FlowerConstants,
 	currencyCode: string,
-	t: TranslateFn
+	t: TranslateFn,
+	opts: PrintMultiOptions = {}
 ): Promise<void> {
 	const sections: string[] = [];
 	let grandTotal = 0;
@@ -527,37 +835,40 @@ export async function printAllOrders(
 		const order = ordersList[i];
 		const items = await getItems(order.id);
 		const header = renderOrderHeader(order, t);
-		const { html, subtotal } = renderItemsTable(
+		const printRows = buildPrintRows(
+			order,
 			items,
 			flowerSorts,
 			inventoryItems,
 			constants,
-			currencyCode,
-			t
+			opts.packagingLogByOrder?.[order.id] ?? [],
+			opts.packAssignmentsByOrder?.[order.id] ?? []
 		);
-		const orderTotal = order.total_amount > 0 ? order.total_amount : subtotal;
+		const { html, subtotal } = renderItemsTable(printRows, currencyCode, t);
+		const orderTotal = subtotal > 0 ? subtotal : order.total_amount;
 		grandTotal += orderTotal;
 
-		for (const it of items) {
-			const sort = flowerSorts.find((s) => s.id === it.sort_id || s.id === it.item_id);
-			const calc = computeLine(it, sort, constants);
-			const key = it.sort_id ?? it.item_id;
-			const label = sort
-				? sort.variety
-					? `${sort.name} — ${sort.variety}`
-					: sort.name
-				: key;
+		for (const r of printRows) {
+			const key = r.sortId ?? r.sortName;
+			const label = r.variety ? `${r.sortName} — ${r.variety}` : r.sortName;
 			const existing = sortBreakdown.get(key) ?? {
 				packs: 0,
 				stems: 0,
 				total: 0,
 				name: label,
 			};
-			existing.packs += calc.packCount;
-			existing.stems += calc.packCount * calc.stemsPerPack;
-			existing.total += calc.lineTotal;
+			existing.packs += r.packCount;
+			existing.stems += r.packCount * r.stemsPerPack;
+			existing.total += r.lineTotal;
 			sortBreakdown.set(key, existing);
 		}
+
+		const warehouse = renderWarehouseBlock(
+			printRows,
+			flowerSorts,
+			opts.packAssignmentsByOrder?.[order.id],
+			t
+		);
 
 		sections.push(`
 			<section class="print-order">
@@ -567,6 +878,7 @@ export async function printAllOrders(
 					<span>${t('print_summary')}:</span>
 					<strong>${formatMoney(orderTotal, currencyCode)}</strong>
 				</div>
+				${warehouse}
 			</section>
 		`);
 	}
@@ -667,7 +979,8 @@ export async function printOrdersRegistry(
 	constants: FlowerConstants,
 	currencyCode: string,
 	t: TranslateFn,
-	range?: { from: string; to: string }
+	range?: { from: string; to: string },
+	opts: PrintMultiOptions = {}
 ): Promise<void> {
 	// Pre-fetch all items in parallel, preserving input order.
 	const pairs = await Promise.all(
@@ -684,9 +997,21 @@ export async function printOrdersRegistry(
 		const dateShort = escapeHtml(formatDateShort(order.created_at));
 		const customer = escapeHtml(order.customer_name || '—');
 		const statusLabel = escapeHtml(translateStatus(order.status, t));
-		let orderSubtotal = 0;
 
-		if (items.length === 0) {
+		const orderAssignments = opts.packAssignmentsByOrder?.[order.id] ?? [];
+		const orderPackagingLog = opts.packagingLogByOrder?.[order.id] ?? [];
+
+		const printRows = buildPrintRows(
+			order,
+			items,
+			flowerSorts,
+			inventoryItems,
+			constants,
+			orderPackagingLog,
+			orderAssignments
+		);
+
+		if (printRows.length === 0) {
 			rowIdx++;
 			rows.push(`
 				<tr>
@@ -696,56 +1021,62 @@ export async function printOrdersRegistry(
 					<td class="reg-sort reg-empty">—</td>
 					<td class="reg-qty">—</td>
 					<td class="reg-qty">—</td>
+					<td class="reg-qty">—</td>
 					<td class="reg-price">—</td>
-					<td class="reg-total">${formatMoney(0, currencyCode)}</td>
+					<td class="reg-total">—</td>
 					<td class="reg-status">${statusLabel}</td>
 				</tr>
 			`);
 			continue;
 		}
 
-		items.forEach((it, i) => {
+		let orderSubtotal = 0;
+		const rowspan = printRows.length;
+		printRows.forEach((r, i) => {
 			rowIdx++;
-			const sort = flowerSorts.find((s) => s.id === it.sort_id || s.id === it.item_id);
-			const { name, variety } = resolveItemName(it, flowerSorts, inventoryItems);
-			const calc = computeLine(it, sort, constants);
-			if (calc.lineTotal === 0 && calc.packCount === 0) {
-				// Flag for the developer: either `unit_price` was lost on write,
-				// or the row predates the `sort_id` backfill AND its item_id no
-				// longer matches a live flower_sort. The row still renders (so
-				// the user sees it exists), but totals can't be reconstructed.
+			if (r.lineTotal === 0 && r.packCount === 0) {
 				console.warn('[printOrdersRegistry] zero-value line', {
-					order: order.id, item: it.id, sort_id: it.sort_id, item_id: it.item_id,
+					order: order.id, sort: r.sortId, source: r.source,
 				});
 			}
-			orderSubtotal += calc.lineTotal;
-			grandPacks += calc.packCount;
-			grandStems += calc.packCount * calc.stemsPerPack;
-			const sortLabel = variety
-				? `${escapeHtml(name)} — ${escapeHtml(variety)}`
-				: escapeHtml(name);
+			orderSubtotal += r.lineTotal;
+			grandPacks += r.packCount;
+			grandStems += r.packCount * r.stemsPerPack;
+			const sortLabel = r.variety
+				? `${escapeHtml(r.sortName)} — ${escapeHtml(r.variety)}`
+				: escapeHtml(r.sortName);
+			const sourceHint =
+				r.source === 'packaging_log'
+					? ` <span style="color:#888;font-size:8.5pt;">(${escapeHtml(
+							t('print_row_from_packaging') || 'из упаковки'
+						)})</span>`
+					: r.source === 'legacy'
+						? ` <span style="color:#b91c1c;font-size:8.5pt;">(${escapeHtml(
+								t('print_row_legacy') || 'архив'
+							)})</span>`
+						: '';
 			const isFirst = i === 0;
-			const rowspan = items.length;
 			rows.push(`
 				<tr>
 					<td class="reg-num">${rowIdx}</td>
 					${isFirst ? `<td class="reg-date" rowspan="${rowspan}">${dateShort}</td>` : ''}
 					${isFirst ? `<td class="reg-cust" rowspan="${rowspan}">${customer}</td>` : ''}
-					<td class="reg-sort">${sortLabel}</td>
-					<td class="reg-qty">${calc.packCount}</td>
-					<td class="reg-qty">${calc.stemsPerPack}</td>
-					<td class="reg-price">${formatMoney(calc.pricePerPack, currencyCode)}</td>
-					<td class="reg-total">${formatMoney(calc.lineTotal, currencyCode)}</td>
+					<td class="reg-sort">${sortLabel}${sourceHint}</td>
+					<td class="reg-qty">${r.packCount || '—'}</td>
+					<td class="reg-qty">${r.stemsPerPack || '—'}</td>
+					<td class="reg-qty">${r.reservedPacks}</td>
+					<td class="reg-price">${r.pricePerPack > 0 ? formatMoney(r.pricePerPack, currencyCode) : '—'}</td>
+					<td class="reg-total">${formatMoney(r.lineTotal, currencyCode)}</td>
 					${isFirst ? `<td class="reg-status" rowspan="${rowspan}">${statusLabel}</td>` : ''}
 				</tr>
 			`);
 		});
 
-		const finalTotal = order.total_amount > 0 ? order.total_amount : orderSubtotal;
+		const finalTotal = orderSubtotal > 0 ? orderSubtotal : order.total_amount;
 		grandTotal += finalTotal;
 		rows.push(`
 			<tr class="order-subtotal-row">
-				<td colspan="7">${escapeHtml(t('print_summary'))}:</td>
+				<td colspan="8">${escapeHtml(t('print_summary'))}:</td>
 				<td class="reg-total">${formatMoney(finalTotal, currencyCode)}</td>
 				<td></td>
 			</tr>
@@ -775,6 +1106,7 @@ export async function printOrdersRegistry(
 					<th class="reg-sort">${escapeHtml(t('label_sort_col'))}</th>
 					<th class="reg-qty">${escapeHtml(t('label_pack_count'))}</th>
 					<th class="reg-qty">${escapeHtml(t('label_stems_per_pack'))}</th>
+					<th class="reg-qty">${escapeHtml(t('label_assigned_packs'))}</th>
 					<th class="reg-price">${escapeHtml(t('label_price_per_pack'))}</th>
 					<th class="reg-total">${escapeHtml(t('print_summary'))}</th>
 					<th class="reg-status">${escapeHtml(t('label_status_col'))}</th>
@@ -783,7 +1115,7 @@ export async function printOrdersRegistry(
 			<tbody>
 				${
 					rows.length === 0
-						? `<tr><td colspan="9" class="reg-empty" style="padding:24px;">${escapeHtml(t('print_dialog_no_orders'))}</td></tr>`
+						? `<tr><td colspan="10" class="reg-empty" style="padding:24px;">${escapeHtml(t('print_dialog_no_orders'))}</td></tr>`
 						: rows.join('')
 				}
 			</tbody>

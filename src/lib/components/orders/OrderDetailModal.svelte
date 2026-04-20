@@ -8,9 +8,10 @@
 	import { formatCountdown } from '$lib/utils/countdown';
 	import { printSingleOrder } from '$lib/utils/print';
 	import { computeLine, resolveItemName } from '$lib/utils/orderLine';
+	import { commands } from '$lib/tauri/commands';
 	import OrderProgressBar from './OrderProgressBar.svelte';
 	import FlowerCard from '$lib/components/greenhouse/FlowerCard.svelte';
-	import type { Order, OrderItem, FlowerSort } from '$lib/tauri/types';
+	import type { Order, OrderItem, FlowerSort, PackAssignment, PackagingLogEntry } from '$lib/tauri/types';
 
 	interface Props {
 		order: Order;
@@ -20,12 +21,26 @@
 	let { order = $bindable(), onclose }: Props = $props();
 
 	let orderItems = $state<OrderItem[]>([]);
+	let packAssignments = $state<PackAssignment[]>([]);
+	let recentPackagingBySort = $state<Record<string, PackagingLogEntry[]>>({});
 	let countdown = $state('');
 	let timerInterval: ReturnType<typeof setInterval> | null = null;
 
+	async function loadAssignments() {
+		if ($preset !== 'flowers') return;
+		try {
+			packAssignments = await commands.getPackAssignments(order.id);
+		} catch (e) {
+			console.warn('Failed to load pack assignments:', e);
+		}
+	}
+
 	$effect(() => {
 		orders.getItems(order.id).then((items) => (orderItems = items));
-		if ($preset === 'flowers') flowerConstants.load();
+		if ($preset === 'flowers') {
+			flowerConstants.load();
+			loadAssignments();
+		}
 
 		if (order.deadline) {
 			function tick() { countdown = formatCountdown(order.deadline!); }
@@ -36,6 +51,23 @@
 		return () => {
 			if (timerInterval) clearInterval(timerInterval);
 		};
+	});
+
+	// Load recent packaging history for every sort referenced in the order.
+	$effect(() => {
+		if ($preset !== 'flowers' || orderItems.length === 0) return;
+		const sortIds = [
+			...new Set(orderItems.map((oi) => oi.sort_id).filter((s): s is string => !!s)),
+		];
+		Promise.all(
+			sortIds.map((sid) =>
+				commands.getPackagingLogBySort(sid, 5).then((rows) => [sid, rows] as const)
+			)
+		)
+			.then((entries) => {
+				recentPackagingBySort = Object.fromEntries(entries);
+			})
+			.catch((e) => console.warn('Failed to load packaging history:', e));
 	});
 
 	// Find the associated flower sorts. Prefer the explicit sort_id link
@@ -92,8 +124,62 @@
 			$inventory,
 			$flowerConstants,
 			$globalCurrency,
-			$t
+			$t,
+			{ packAssignments }
 		);
+	}
+
+	async function handleDelete() {
+		const prompt =
+			order.status === 'completed'
+				? $t('confirm_delete_completed_order')
+				: $t('confirm_delete_order').replace('{name}', order.customer_name);
+		if (!confirm(prompt)) return;
+		try {
+			await orders.remove(order.id);
+			onclose();
+		} catch (e) {
+			console.error('Failed to delete order:', e);
+			alert(String(e));
+		}
+	}
+
+	async function handleDeleteAssignment(a: PackAssignment) {
+		if (!confirm($t('confirm_delete_pack_assignment'))) return;
+		try {
+			await flowerSorts.deletePackAssignment(a.id);
+			packAssignments = packAssignments.filter((x) => x.id !== a.id);
+		} catch (e) {
+			console.error('Failed to delete pack assignment:', e);
+			alert(String(e));
+		}
+	}
+
+	// Warehouse state per order line — raw stock, pkg stock, reserved, deficit.
+	const warehouseRows = $derived.by(() => {
+		if ($preset !== 'flowers') return [];
+		return lines.map((l) => {
+			const reserved = l.oi.sort_id
+				? packAssignments
+					.filter((a) => a.sort_id === l.oi.sort_id)
+					.reduce((sum, a) => sum + a.pack_count, 0)
+				: 0;
+			const needed = l.calc.packCount;
+			return {
+				sortId: l.oi.sort_id ?? null,
+				sortName: l.name,
+				variety: l.variety,
+				rawStock: l.sort?.raw_stock ?? 0,
+				pkgStock: l.sort?.pkg_stock ?? 0,
+				reserved,
+				needed,
+				deficit: Math.max(0, needed - reserved),
+			};
+		});
+	});
+
+	function statusBadgeClass(status: string): string {
+		return 'status-badge status-' + status;
 	}
 
 	function handleBackdrop(e: MouseEvent) {
@@ -115,7 +201,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-<div class="modal-backdrop" onclick={handleBackdrop} role="dialog" aria-modal="true">
+<div class="modal-backdrop" onclick={handleBackdrop} role="dialog" aria-modal="true" tabindex="-1">
 	<div class="modal-panel">
 
 		<!-- Header -->
@@ -125,6 +211,10 @@
 				<h2 class="order-customer">{order.customer_name}</h2>
 			</div>
 			<div class="header-right">
+				<button class="btn-delete-order" type="button" onclick={handleDelete} title={$t('action_delete_order')}>
+					<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+					{$t('action_delete_order')}
+				</button>
 				<button class="btn-print" type="button" onclick={printPreorder}>
 					<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
 					Печать
@@ -232,6 +322,139 @@
 							</table>
 						</div>
 					</div>
+				{/if}
+
+				<!-- Warehouse & greenhouse state per order line -->
+				{#if $preset === 'flowers' && warehouseRows.length > 0}
+					<div class="section">
+						<h3 class="section-title">{$t('section_warehouse_state')}</h3>
+						<div class="items-table-wrap">
+							<table class="items-table wh-table">
+								<thead>
+									<tr>
+										<th class="it-sort">{$t('label_sort_col')}</th>
+										<th class="it-num">{$t('label_raw_stock')}</th>
+										<th class="it-num">{$t('label_pkg_stock')}</th>
+										<th class="it-num">{$t('label_assigned_packs')}</th>
+										<th class="it-num">{$t('label_pack_count')}</th>
+										<th class="it-num">{$t('label_deficit')}</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each warehouseRows as row, i (i)}
+										<tr class:row-deficit={row.deficit > 0}>
+											<td class="it-sort">
+												<span class="it-name">{row.sortName}</span>
+												{#if row.variety}
+													<span class="it-variety">{row.variety}</span>
+												{/if}
+											</td>
+											<td class="it-num">{row.rawStock}</td>
+											<td class="it-num">{row.pkgStock}</td>
+											<td class="it-num">{row.reserved}</td>
+											<td class="it-num">{row.needed}</td>
+											<td class="it-num" class:deficit-cell={row.deficit > 0}>{row.deficit}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				{/if}
+
+				<!-- Linked pack assignments -->
+				{#if $preset === 'flowers'}
+					<div class="section">
+						<h3 class="section-title">{$t('section_linked_packs')}</h3>
+						{#if packAssignments.length === 0}
+							<p class="empty-hint">{$t('empty_no_assignments')}</p>
+						{:else}
+							<div class="items-table-wrap">
+								<table class="items-table assign-table">
+									<thead>
+										<tr>
+											<th class="it-sort">{$t('label_sort_col')}</th>
+											<th class="it-num">{$t('label_pack_count')}</th>
+											<th class="it-num">{$t('label_stems_per_pack')}</th>
+											<th>{$t('label_status')}</th>
+											<th>{$t('label_created_at')}</th>
+											<th class="it-num"></th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each packAssignments as a (a.id)}
+											{@const assignedSort = $flowerSorts.find((s) => s.id === a.sort_id)}
+											<tr>
+												<td class="it-sort">
+													<span class="it-name">{assignedSort?.name ?? a.sort_id}</span>
+													{#if assignedSort?.variety}
+														<span class="it-variety">{assignedSort.variety}</span>
+													{/if}
+												</td>
+												<td class="it-num">{a.pack_count}</td>
+												<td class="it-num">{a.stems_per_pack}</td>
+												<td>
+													<span class={statusBadgeClass(a.status)}>
+														{$t('pack_status_' + a.status)}
+													</span>
+												</td>
+												<td class="it-muted">{new Date(a.created_at).toLocaleString('ru', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</td>
+												<td class="it-num">
+													<button
+														class="btn-row-delete"
+														type="button"
+														onclick={() => handleDeleteAssignment(a)}
+														title={$t('action_delete_assignment')}
+														aria-label={$t('action_delete_assignment')}
+													>×</button>
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- Recent packaging history per sort in the order -->
+				{#if $preset === 'flowers' && Object.keys(recentPackagingBySort).length > 0}
+					<details class="section recent-pack-section">
+						<summary class="section-title recent-summary">{$t('section_recent_packaging')}</summary>
+						<div class="recent-groups">
+							{#each Object.entries(recentPackagingBySort) as [sortId, entries] (sortId)}
+								{#if entries.length > 0}
+									{@const sortInfo = $flowerSorts.find((s) => s.id === sortId)}
+									<div class="recent-group">
+										<div class="recent-group-title">
+											{sortInfo?.name ?? entries[0].sort_name ?? sortId}
+											{#if sortInfo?.variety}
+												<span class="it-variety"> — {sortInfo.variety}</span>
+											{/if}
+										</div>
+										<table class="items-table recent-table">
+											<thead>
+												<tr>
+													<th>{$t('label_created_at')}</th>
+													<th class="it-num">{$t('label_pack_count')}</th>
+													<th class="it-num">{$t('label_stems')}</th>
+												</tr>
+											</thead>
+											<tbody>
+												{#each entries as e (e.id)}
+													<tr>
+														<td class="it-muted">{new Date(e.created_at).toLocaleString('ru', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</td>
+														<td class="it-num">{e.pack_count}</td>
+														<td class="it-num">{e.stems_used}</td>
+													</tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+								{/if}
+							{/each}
+						</div>
+					</details>
 				{/if}
 
 				<!-- Linked flower sorts -->
@@ -367,6 +590,20 @@
 		color: var(--color-on-surface); transition: background 0.1s;
 	}
 	.btn-print:hover { background: var(--glass-bg-hover); }
+
+	.btn-delete-order {
+		display: flex; align-items: center; gap: 6px;
+		background: transparent;
+		border: 1px solid color-mix(in srgb, var(--color-alert-red, #ef4444) 45%, transparent);
+		color: var(--color-alert-red, #ef4444);
+		border-radius: 8px; padding: 6px 12px;
+		font-size: 0.8rem; cursor: pointer;
+		transition: background 0.1s, color 0.1s;
+	}
+	.btn-delete-order:hover {
+		background: color-mix(in srgb, var(--color-alert-red, #ef4444) 12%, transparent);
+		color: var(--color-alert-red, #ef4444);
+	}
 
 	.btn-close {
 		background: none; border: none;
@@ -511,6 +748,107 @@
 	.meta-row { display: flex; justify-content: space-between; }
 	.meta-label { font-size: 0.72rem; color: var(--color-outline); }
 	.meta-val { font-size: 0.75rem; color: var(--color-on-surface); opacity: 0.7; }
+
+	/* Warehouse state + assignments + recent packaging */
+	.items-table .it-muted {
+		font-size: 0.75rem;
+		color: var(--color-outline);
+		white-space: nowrap;
+	}
+
+	.row-deficit .deficit-cell {
+		color: var(--color-alert-red, #ef4444);
+		font-weight: 700;
+	}
+	.row-deficit td { background: color-mix(in srgb, var(--color-alert-red, #ef4444) 6%, transparent); }
+
+	.status-badge {
+		display: inline-block;
+		padding: 2px 8px;
+		border-radius: 999px;
+		font-size: 0.68rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		border: 1px solid var(--glass-border);
+		background: var(--glass-bg);
+		color: var(--color-on-surface);
+	}
+	.status-badge.status-prepared {
+		background: color-mix(in srgb, #f59e0b 15%, transparent);
+		border-color: color-mix(in srgb, #f59e0b 45%, transparent);
+		color: #f59e0b;
+	}
+	.status-badge.status-loaded {
+		background: color-mix(in srgb, #3b82f6 15%, transparent);
+		border-color: color-mix(in srgb, #3b82f6 45%, transparent);
+		color: #3b82f6;
+	}
+	.status-badge.status-delivered {
+		background: color-mix(in srgb, #10b981 15%, transparent);
+		border-color: color-mix(in srgb, #10b981 45%, transparent);
+		color: #10b981;
+	}
+
+	.btn-row-delete {
+		background: transparent;
+		border: none;
+		color: var(--color-outline);
+		font-size: 1rem;
+		line-height: 1;
+		cursor: pointer;
+		padding: 2px 8px;
+		border-radius: 6px;
+		transition: background 0.1s, color 0.1s;
+	}
+	.btn-row-delete:hover {
+		background: color-mix(in srgb, var(--color-alert-red, #ef4444) 12%, transparent);
+		color: var(--color-alert-red, #ef4444);
+	}
+
+	.empty-hint {
+		margin: 0;
+		padding: 10px 12px;
+		font-size: 0.82rem;
+		color: var(--color-outline);
+		background: var(--glass-bg);
+		border: 1px dashed var(--glass-border);
+		border-radius: 10px;
+	}
+
+	.recent-pack-section {
+		padding: 0;
+	}
+	.recent-pack-section[open] .recent-summary { margin-bottom: 8px; }
+	.recent-summary {
+		cursor: pointer;
+		list-style: none;
+		user-select: none;
+	}
+	.recent-summary::-webkit-details-marker { display: none; }
+	.recent-summary::before {
+		content: '▶';
+		display: inline-block;
+		font-size: 0.6rem;
+		margin-right: 6px;
+		transition: transform 0.15s;
+	}
+	.recent-pack-section[open] .recent-summary::before {
+		transform: rotate(90deg);
+	}
+
+	.recent-groups {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.recent-group-title {
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--color-on-surface);
+		margin-bottom: 4px;
+	}
+	.recent-table { font-size: 0.78rem; }
 
 	/* Light mode */
 	:global([data-theme="light"]) .modal-panel { background: var(--color-surface, #fafafa); }

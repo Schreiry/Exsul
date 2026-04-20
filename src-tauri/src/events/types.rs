@@ -325,8 +325,18 @@ pub struct PackagingLogEntry {
     pub id: String,
     pub sort_id: String,
     pub sort_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variety: Option<String>,
     pub pack_count: i32,
     pub stems_used: i32,
+    // Derived fields — joined from flower_sorts so the frontend has
+    // everything needed to render a print row without a second round-trip.
+    #[serde(default)]
+    pub stems_per_pack: i32,
+    #[serde(default)]
+    pub sell_price_stem: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
     pub created_at: String,
 }
 

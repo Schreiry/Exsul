@@ -164,3 +164,55 @@ pub fn get_earliest_order_date(db: State<'_, Database>) -> Result<Option<String>
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     crate::db::queries::get_earliest_order_date(&conn)
 }
+
+/// Delete an order. `pack_assignments` rows are unlinked (order_id=NULL) so
+/// the physically packaged stock remains on the warehouse as free pkg_stock.
+#[tauri::command]
+pub fn delete_order(
+    db: State<'_, Database>,
+    hlc: State<'_, HybridLogicalClock>,
+    order_id: String,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::delete_order(&conn, &order_id)?;
+    drop(conn);
+
+    store::append_event(
+        &db,
+        &hlc,
+        &order_id,
+        "order",
+        "OrderDeleted",
+        json!({ "order_id": order_id }),
+    )?;
+
+    if let Err(e) = store::append_audit_log(
+        &db,
+        "local",
+        "OrderDeleted",
+        json!({ "order_id": order_id }),
+    ) {
+        log::warn!("audit log write failed: {}", e);
+    }
+
+    Ok(())
+}
+
+/// Delete every order. Returns the count of deleted orders.
+#[tauri::command]
+pub fn delete_all_orders(db: State<'_, Database>) -> Result<i64, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let count = crate::db::queries::delete_all_orders(&conn)?;
+    drop(conn);
+
+    if let Err(e) = store::append_audit_log(
+        &db,
+        "local",
+        "OrderAllDeleted",
+        json!({ "count": count }),
+    ) {
+        log::warn!("audit log write failed: {}", e);
+    }
+
+    Ok(count)
+}

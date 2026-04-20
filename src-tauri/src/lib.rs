@@ -95,6 +95,8 @@ pub fn run() {
             commands::orders::get_order,
             commands::orders::add_order_item,
             commands::orders::get_order_items,
+            commands::orders::delete_order,
+            commands::orders::delete_all_orders,
             // ── App Preset & Trusted Nodes ──
             commands::preset::get_app_preset,
             commands::preset::set_app_preset,
@@ -113,7 +115,12 @@ pub fn run() {
             commands::flowers::create_pack_assignment,
             commands::flowers::get_pack_assignments,
             commands::flowers::get_packaging_log,
+            commands::flowers::get_packaging_log_by_sort,
+            commands::flowers::get_packaging_log_by_order,
             commands::flowers::update_pack_status,
+            commands::flowers::delete_packaging_entry,
+            commands::flowers::delete_all_packaging,
+            commands::flowers::delete_pack_assignment,
             // ── WebSocket P2P ──
             commands::ws::start_ws_server,
             commands::ws::ws_connect_peer,

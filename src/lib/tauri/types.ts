@@ -271,8 +271,12 @@ export interface PackagingLogEntry {
 	id: string;
 	sort_id: string;
 	sort_name: string;
+	variety?: string;
 	pack_count: number;
 	stems_used: number;
+	stems_per_pack: number;
+	sell_price_stem: number;
+	order_id?: string;
 	created_at: string;
 }
 

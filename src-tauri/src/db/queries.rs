@@ -822,6 +822,7 @@ pub fn package_flowers(
     sort_id: &str,
     pack_count: i32,
     flowers_per_pack: i32,
+    order_id: Option<&str>,
 ) -> Result<PackageResult, String> {
     // Read current stock
     let (raw_stock, _pkg_stock): (i32, i32) = conn
@@ -852,10 +853,13 @@ pub fn package_flowers(
     )
     .map_err(|e| e.to_string())?;
 
-    // Log the transaction
+    // Log the transaction. `order_id` is optional — when supplied, the
+    // packaging entry is immediately linked to the order so the warehouse
+    // ↔ orders chain is queryable in both directions.
     conn.execute(
-        "INSERT INTO packaging_log (id, sort_id, pack_count, stems_used) VALUES (?1, ?2, ?3, ?4)",
-        params![log_id, sort_id, pack_count, stems_needed],
+        "INSERT INTO packaging_log (id, sort_id, pack_count, stems_used, order_id)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![log_id, sort_id, pack_count, stems_needed, order_id],
     )
     .map_err(|e| e.to_string())?;
 
@@ -1417,33 +1421,305 @@ pub fn update_pack_status(conn: &Connection, id: &str, status: &str) -> Result<(
 
 // ── Packaging Log ────────────────────────────────────────────
 
+// Shared SELECT — every packaging_log reader joins flower_sorts so the
+// frontend can render a full print row (sort name + variety + unit price)
+// without a second round-trip. Keeping the projection in one place avoids
+// drift between readers.
+const PACKAGING_LOG_SELECT: &str = "SELECT pl.id, pl.sort_id, fs.name, fs.variety,
+                pl.pack_count, pl.stems_used,
+                COALESCE(fs.sell_price_stem, 0.0),
+                pl.order_id, pl.created_at
+         FROM packaging_log pl
+         LEFT JOIN flower_sorts fs ON fs.id = pl.sort_id";
+
+fn map_packaging_log_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PackagingLogEntry> {
+    let pack_count: i32 = row.get(4)?;
+    let stems_used: i32 = row.get(5)?;
+    // stems_used is the total — derive per-pack on the backend so every
+    // caller agrees on the value even if pack_count is 0 (legacy guard).
+    let stems_per_pack = if pack_count > 0 { stems_used / pack_count } else { 0 };
+    Ok(PackagingLogEntry {
+        id: row.get(0)?,
+        sort_id: row.get(1)?,
+        sort_name: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+        variety: row.get::<_, Option<String>>(3)?,
+        pack_count,
+        stems_used,
+        stems_per_pack,
+        sell_price_stem: row.get::<_, Option<f64>>(6)?.unwrap_or(0.0),
+        order_id: row.get::<_, Option<String>>(7)?,
+        created_at: row.get(8)?,
+    })
+}
+
 pub fn get_packaging_log(
     conn: &Connection,
     limit: Option<i64>,
 ) -> Result<Vec<PackagingLogEntry>, String> {
     let lim = limit.unwrap_or(200);
-    let mut stmt = conn
-        .prepare(
-            "SELECT pl.id, pl.sort_id, fs.name, pl.pack_count, pl.stems_used, pl.created_at
-             FROM packaging_log pl
-             LEFT JOIN flower_sorts fs ON fs.id = pl.sort_id
-             ORDER BY pl.created_at DESC
-             LIMIT ?1",
-        )
-        .map_err(|e| e.to_string())?;
+    let sql = format!("{} ORDER BY pl.created_at DESC LIMIT ?1", PACKAGING_LOG_SELECT);
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map([lim], |row| {
-            Ok(PackagingLogEntry {
-                id: row.get(0)?,
-                sort_id: row.get(1)?,
-                sort_name: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                pack_count: row.get(3)?,
-                stems_used: row.get(4)?,
-                created_at: row.get(5)?,
-            })
-        })
+        .query_map([lim], map_packaging_log_row)
         .map_err(|e| e.to_string())?;
 
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+pub fn get_packaging_log_by_sort(
+    conn: &Connection,
+    sort_id: &str,
+    limit: Option<i64>,
+) -> Result<Vec<PackagingLogEntry>, String> {
+    let lim = limit.unwrap_or(50);
+    let sql = format!(
+        "{} WHERE pl.sort_id = ?1 ORDER BY pl.created_at DESC LIMIT ?2",
+        PACKAGING_LOG_SELECT
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![sort_id, lim], map_packaging_log_row)
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+/// Packaging entries linked to a specific order. Returned chronologically
+/// (oldest first) because the print layout reads top-to-bottom along the
+/// warehouse→order chain. Includes unlinked log rows? No — strict filter.
+pub fn get_packaging_log_by_order(
+    conn: &Connection,
+    order_id: &str,
+) -> Result<Vec<PackagingLogEntry>, String> {
+    let sql = format!(
+        "{} WHERE pl.order_id = ?1 ORDER BY pl.created_at ASC",
+        PACKAGING_LOG_SELECT
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([order_id], map_packaging_log_row)
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+// ============================================================
+// Deletion — orders, packaging, pack assignments
+// ============================================================
+
+/// Delete a single order. `pack_assignments.order_id` becomes NULL so physically
+/// packaged stock stays available; `packaging_log.order_id` is similarly cleared.
+/// `order_items` are removed (FK CASCADE is also in place as a backstop).
+pub fn delete_order(conn: &Connection, order_id: &str) -> Result<(), String> {
+    conn.execute("BEGIN IMMEDIATE", []).map_err(|e| e.to_string())?;
+
+    let result: Result<(), String> = (|| {
+        conn.execute(
+            "UPDATE pack_assignments SET order_id = NULL WHERE order_id = ?1",
+            [order_id],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE packaging_log SET order_id = NULL WHERE order_id = ?1",
+            [order_id],
+        )
+        .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM order_items WHERE order_id = ?1", [order_id])
+            .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM orders WHERE id = ?1", [order_id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => {
+            conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
+/// Delete every order. Unlinks pack_assignments and packaging_log, returns count.
+pub fn delete_all_orders(conn: &Connection) -> Result<i64, String> {
+    conn.execute("BEGIN IMMEDIATE", []).map_err(|e| e.to_string())?;
+
+    let result: Result<i64, String> = (|| {
+        conn.execute("UPDATE pack_assignments SET order_id = NULL", [])
+            .map_err(|e| e.to_string())?;
+        conn.execute("UPDATE packaging_log SET order_id = NULL", [])
+            .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM order_items", [])
+            .map_err(|e| e.to_string())?;
+        let deleted = conn
+            .execute("DELETE FROM orders", [])
+            .map_err(|e| e.to_string())?;
+        Ok(deleted as i64)
+    })();
+
+    match result {
+        Ok(count) => {
+            conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+            Ok(count)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
+/// Delete a single packaging_log entry, rolling back the stock movement:
+/// `pkg_stock -= pack_count`, `raw_stock += stems_used`, and record the
+/// inverse move in `greenhouse_harvest_log` as a `correction`.
+///
+/// Fails if pkg_stock would go negative (i.e. some packs already shipped).
+pub fn delete_packaging_entry(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.execute("BEGIN IMMEDIATE", []).map_err(|e| e.to_string())?;
+
+    let result: Result<(), String> = (|| {
+        let (sort_id, pack_count, stems_used): (String, i32, i32) = conn
+            .query_row(
+                "SELECT sort_id, pack_count, stems_used FROM packaging_log WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => "packaging_entry_not_found".to_string(),
+                other => other.to_string(),
+            })?;
+
+        let current_pkg: i32 = conn
+            .query_row(
+                "SELECT pkg_stock FROM flower_sorts WHERE id = ?1",
+                [&sort_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        if current_pkg < pack_count {
+            return Err("pkg_stock_underflow".to_string());
+        }
+
+        conn.execute(
+            "UPDATE flower_sorts SET
+                pkg_stock  = pkg_stock - ?2,
+                raw_stock  = raw_stock + ?3,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+             WHERE id = ?1",
+            params![sort_id, pack_count, stems_used],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let harvest_id = uuid::Uuid::new_v4().to_string();
+        let note = format!("rollback packaging {}", id);
+        conn.execute(
+            "INSERT INTO greenhouse_harvest_log (id, sort_id, delta, reason, note)
+             VALUES (?1, ?2, ?3, 'correction', ?4)",
+            params![harvest_id, sort_id, stems_used, note],
+        )
+        .map_err(|e| e.to_string())?;
+
+        conn.execute("DELETE FROM packaging_log WHERE id = ?1", [id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => {
+            conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
+/// Delete every packaging_log entry, rolling back each one. If any single
+/// rollback is impossible (pkg_stock underflow), the whole operation aborts
+/// and nothing is deleted.
+pub fn delete_all_packaging(conn: &Connection) -> Result<i64, String> {
+    conn.execute("BEGIN IMMEDIATE", []).map_err(|e| e.to_string())?;
+
+    let result: Result<i64, String> = (|| {
+        let mut stmt = conn
+            .prepare("SELECT id, sort_id, pack_count, stems_used FROM packaging_log")
+            .map_err(|e| e.to_string())?;
+        let rows: Vec<(String, String, i32, i32)> = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        drop(stmt);
+
+        let mut count = 0i64;
+        for (pl_id, sort_id, pack_count, stems_used) in rows {
+            let current_pkg: i32 = conn
+                .query_row(
+                    "SELECT pkg_stock FROM flower_sorts WHERE id = ?1",
+                    [&sort_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+
+            if current_pkg < pack_count {
+                return Err(format!("pkg_stock_underflow:{}", sort_id));
+            }
+
+            conn.execute(
+                "UPDATE flower_sorts SET
+                    pkg_stock  = pkg_stock - ?2,
+                    raw_stock  = raw_stock + ?3,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+                 WHERE id = ?1",
+                params![sort_id, pack_count, stems_used],
+            )
+            .map_err(|e| e.to_string())?;
+
+            let harvest_id = uuid::Uuid::new_v4().to_string();
+            let note = format!("rollback packaging {}", pl_id);
+            conn.execute(
+                "INSERT INTO greenhouse_harvest_log (id, sort_id, delta, reason, note)
+                 VALUES (?1, ?2, ?3, 'correction', ?4)",
+                params![harvest_id, sort_id, stems_used, note],
+            )
+            .map_err(|e| e.to_string())?;
+
+            count += 1;
+        }
+
+        conn.execute("DELETE FROM packaging_log", [])
+            .map_err(|e| e.to_string())?;
+        Ok(count)
+    })();
+
+    match result {
+        Ok(count) => {
+            conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+            Ok(count)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
+/// Remove a pack-assignment row. The warehouse pkg_stock is NOT changed:
+/// deleting an assignment means the reservation is released; the physical
+/// packs remain available on the shelf.
+pub fn delete_pack_assignment(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM pack_assignments WHERE id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
