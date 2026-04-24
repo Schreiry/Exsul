@@ -98,6 +98,16 @@ const MIGRATIONS: &[Migration] = &[
         name: "contacts",
         sql: include_str!("../../migrations/017_contacts.sql"),
     },
+    // Shadow items rows for every flower_sort so the hard FK
+    // order_items.item_id → items(id) is satisfied in flowers mode.
+    // Additive fix for the "FOREIGN KEY constraint failed" cascade that
+    // broke pack-with-order creation and left orders with total=0 and
+    // empty linked-packs.
+    Migration {
+        version: 18,
+        name: "items_shadow_for_flower_sorts",
+        sql: include_str!("../../migrations/018_items_shadow_for_flower_sorts.sql"),
+    },
 ];
 
 /// Execute a migration's SQL idempotently:

@@ -14,12 +14,18 @@ use rusqlite::{params, Connection};
 // ============================================================
 
 pub fn get_items(conn: &Connection) -> Result<Vec<Item>, String> {
+    // Exclude shadow rows synthesized for flower_sorts (see migration 018 and
+    // insert_flower_sort). Those exist only to satisfy the FK from
+    // order_items.item_id → items(id) in flowers mode and must not appear in
+    // the items-UI of other presets.
     let mut stmt = conn
         .prepare(
             "SELECT id, name, category, initial_price, current_price, production_cost,
                     current_stock, sold_count, revenue, created_at, updated_at,
                     category_id, image_path, card_color
-             FROM items ORDER BY updated_at DESC",
+             FROM items
+             WHERE category != 'flower_sort'
+             ORDER BY updated_at DESC",
         )
         .map_err(|e| e.to_string())?;
 
@@ -449,6 +455,20 @@ pub fn insert_order_item(
     let pack_count = payload.pack_count.unwrap_or(0);
     let stems_per_pack = payload.stems_per_pack.unwrap_or(0);
 
+    // Flowers mode passes item_id = flower_sort.id, which would violate the
+    // hard FK order_items.item_id → items(id). Lazily mirror the sort into
+    // items so the FK holds. INSERT OR IGNORE is a no-op for real items rows
+    // and for sorts already mirrored (migration 018 seeds them up front).
+    conn.execute(
+        "INSERT OR IGNORE INTO items (id, name, category, initial_price, current_price)
+         SELECT fs.id, fs.name, 'flower_sort', 0.0, 0.0
+           FROM flower_sorts fs
+          WHERE fs.id = ?1
+            AND NOT EXISTS (SELECT 1 FROM items WHERE id = fs.id)",
+        params![payload.item_id],
+    )
+    .map_err(|e| e.to_string())?;
+
     // sort_id: prefer the explicit value from the payload. If absent, fall
     // back to a COALESCE lookup — if item_id happens to match an existing
     // flower_sorts row, the link is restored automatically. This keeps
@@ -792,6 +812,17 @@ pub fn insert_flower_sort(
         ],
     )
     .map_err(|e| e.to_string())?;
+
+    // Shadow row in items: required so order_items.item_id → items(id) FK
+    // holds when this sort is later referenced from an order. Migration 018
+    // seeds shadows for pre-existing sorts; this keeps new sorts consistent.
+    conn.execute(
+        "INSERT OR IGNORE INTO items (id, name, category, initial_price, current_price)
+         VALUES (?1, ?2, 'flower_sort', 0.0, 0.0)",
+        params![id, payload.name],
+    )
+    .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -828,6 +859,18 @@ pub fn update_flower_sort(
         ],
     )
     .map_err(|e| e.to_string())?;
+
+    // Keep the shadow items row in sync on rename so printouts and lookups
+    // that join through items see the current name.
+    if payload.name.is_some() {
+        conn.execute(
+            "UPDATE items SET name = COALESCE(?2, name)
+               WHERE id = ?1 AND category = 'flower_sort'",
+            params![payload.id, payload.name],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -986,13 +1029,18 @@ pub fn delete_item(conn: &Connection, item_id: &str) -> Result<(), String> {
 }
 
 pub fn delete_all_items(conn: &Connection) -> Result<usize, String> {
+    // Scope the wipe to user-visible items only. Shadow rows carrying
+    // category = 'flower_sort' are owned by the flowers preset and their
+    // removal would cascade-break order_items that reference them.
     conn.execute_batch(
-        "DELETE FROM order_items WHERE item_id IN (SELECT id FROM items);
-         DELETE FROM item_prices WHERE item_id IN (SELECT id FROM items);",
+        "DELETE FROM order_items WHERE item_id IN
+             (SELECT id FROM items WHERE category != 'flower_sort');
+         DELETE FROM item_prices WHERE item_id IN
+             (SELECT id FROM items WHERE category != 'flower_sort');",
     )
     .map_err(|e| e.to_string())?;
     let deleted = conn
-        .execute("DELETE FROM items", [])
+        .execute("DELETE FROM items WHERE category != 'flower_sort'", [])
         .map_err(|e| e.to_string())?;
     Ok(deleted)
 }

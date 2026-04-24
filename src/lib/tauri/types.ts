@@ -299,6 +299,35 @@ export interface PackageResult {
 	packs_created: number;
 }
 
+/**
+ * Payload for the atomic `package_flowers_with_order` command. Customer
+ * fields are optional — when `customer_name` is absent/blank the call
+ * degrades to plain packaging with no order created.
+ */
+export interface PackageWithOrderPayload {
+	sort_id: string;
+	pack_count: number;
+	price_per_pack: number;
+	customer_name?: string;
+	customer_email?: string;
+	customer_phone?: string;
+	delivery_address?: string;
+	deadline?: string;
+	notes?: string;
+	card_color?: string;
+	contact_id?: string;
+	contact_location_id?: string;
+}
+
+export interface PackageWithOrderResult {
+	order_id?: string;
+	packaging_log_id: string;
+	new_raw_stock: number;
+	new_pkg_stock: number;
+	stems_used: number;
+	packs_created: number;
+}
+
 export interface PackagingLogEntry {
 	id: string;
 	sort_id: string;

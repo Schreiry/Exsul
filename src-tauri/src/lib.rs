@@ -112,6 +112,7 @@ pub fn run() {
             commands::flowers::get_flower_constants,
             commands::flowers::set_flower_constants,
             commands::flowers::package_flowers,
+            commands::flowers::package_flowers_with_order,
             commands::flowers::create_pack_assignment,
             commands::flowers::get_pack_assignments,
             commands::flowers::get_packaging_log,

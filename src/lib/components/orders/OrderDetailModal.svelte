@@ -565,13 +565,16 @@
 				{/if}
 
 				<!-- Linked pack assignments — card grid (was a table; cards mirror the
-				     greenhouse FlowerCard look so operators recognize the sort visually). -->
+				     greenhouse FlowerCard look so operators recognize the sort visually).
+				     Fallback: if no explicit pack_assignments exist but packaging_log rows
+				     are linked to this order, synthesize display-only assignments so the
+				     section reflects the physical production that already happened. -->
 				{#if $preset === 'flowers'}
 					<div class="section">
 						<h3 class="section-title">{$t('section_linked_packs')}</h3>
-						{#if packAssignments.length === 0}
+						{#if packAssignments.length === 0 && linkedPackagingLog.length === 0}
 							<p class="empty-hint">{$t('empty_no_assignments')}</p>
-						{:else}
+						{:else if packAssignments.length > 0}
 							<div class="assign-grid">
 								{#each packAssignments as a (a.id)}
 									{@const assignedSort = $flowerSorts.find((s) => s.id === a.sort_id)}
@@ -582,6 +585,26 @@
 									/>
 								{/each}
 							</div>
+						{:else}
+							<div class="assign-grid">
+								{#each linkedPackagingLog as e (e.id)}
+									{@const sortInfo = $flowerSorts.find((s) => s.id === e.sort_id)}
+									{@const synth = {
+										id: `pl:${e.id}`,
+										sort_id: e.sort_id,
+										order_id: e.order_id,
+										pack_count: e.pack_count,
+										stems_per_pack: e.stems_per_pack || (e.pack_count > 0 ? Math.round(e.stems_used / e.pack_count) : 0),
+										status: 'prepared' as const,
+										note: undefined,
+										created_at: e.created_at,
+									}}
+									<PackAssignmentCard assignment={synth} sort={sortInfo} />
+								{/each}
+							</div>
+							<p class="empty-hint" style="margin-top:8px;">
+								{$t('hint_linked_from_packaging_log') || 'Данные восстановлены из журнала упаковки.'}
+							</p>
 						{/if}
 					</div>
 				{/if}

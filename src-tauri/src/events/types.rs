@@ -438,6 +438,52 @@ pub struct CreatePackAssignmentPayload {
     pub note: Option<String>,
 }
 
+/// Atomic payload for `package_flowers_with_order` — covers the full
+/// warehouse→order chain (package, link, order_item, pack_assignment,
+/// total recalculation) in a single transactional call.
+/// Customer-side fields are optional: when none are set, the command
+/// behaves as a plain packaging op with no order created.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PackageWithOrderPayload {
+    pub sort_id: String,
+    pub pack_count: i32,
+    /// Price per pack. Frontend resolves this from the sort's sell_price_stem
+    /// (or a manual override); backend uses it verbatim for the order_item.
+    pub price_per_pack: f64,
+
+    // Optional order/customer data. When `customer_name` is empty/None the
+    // command skips the whole order-creation branch.
+    #[serde(default)]
+    pub customer_name: Option<String>,
+    #[serde(default)]
+    pub customer_email: Option<String>,
+    #[serde(default)]
+    pub customer_phone: Option<String>,
+    #[serde(default)]
+    pub delivery_address: Option<String>,
+    #[serde(default)]
+    pub deadline: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub card_color: Option<String>,
+    #[serde(default)]
+    pub contact_id: Option<String>,
+    #[serde(default)]
+    pub contact_location_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageWithOrderResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order_id: Option<String>,
+    pub packaging_log_id: String,
+    pub new_raw_stock: i32,
+    pub new_pkg_stock: i32,
+    pub stems_used: i32,
+    pub packs_created: i32,
+}
+
 // ============================================================
 // WebSocket / P2P status
 // ============================================================

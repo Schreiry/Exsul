@@ -175,7 +175,7 @@ const PRINT_DOC_CSS = `
 		background: #ffffff;
 		color: #111;
 		font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-		font-size: 13pt;
+		font-size: 14pt;
 		line-height: 1.4;
 		-webkit-print-color-adjust: exact;
 		print-color-adjust: exact;
@@ -224,9 +224,9 @@ const PRINT_DOC_CSS = `
 	.print-meta {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 4px 32px;
+		gap: 6px 32px;
 		margin: 0;
-		font-size: 11pt;
+		font-size: 12pt;
 	}
 	.print-meta > div { display: flex; gap: 8px; }
 	.print-meta dt { font-weight: 600; color: #444; margin: 0; }
@@ -235,26 +235,26 @@ const PRINT_DOC_CSS = `
 	table.print-items {
 		width: 100%;
 		border-collapse: collapse;
-		margin: 10px 0;
-		font-size: 12pt;
+		margin: 12px 0;
+		font-size: 13pt;
 	}
 	table.print-items thead th {
 		background: #e8e8e8;
 		color: #000;
 		font-weight: 700;
 		text-align: left;
-		padding: 9px 10px;
+		padding: 11px 12px;
 		border: 1px solid #777;
 	}
 	table.print-items tbody td {
-		padding: 8px 10px;
+		padding: 10px 12px;
 		border: 1px solid #bbb;
 		vertical-align: top;
 	}
 	table.print-items tbody tr:nth-child(even) td { background: #f6f6f6; }
 
-	.c-num   { width: 28px; text-align: center; }
-	.c-qty   { width: 70px; text-align: center; }
+	.c-num   { width: 32px; text-align: center; }
+	.c-qty   { width: 78px; text-align: center; }
 	.c-price,
 	.c-total { text-align: right; white-space: nowrap; }
 	.c-name  { font-weight: 600; }
@@ -282,13 +282,48 @@ const PRINT_DOC_CSS = `
 		justify-content: space-between;
 		align-items: center;
 		margin-top: 10px;
-		padding: 10px 14px;
+		padding: 12px 16px;
 		border-top: 2.5px solid #111;
-		font-size: 15pt;
+		font-size: 16pt;
 		font-weight: 700;
 	}
 	.tot-label { letter-spacing: 0.02em; }
-	.tot-val   { min-width: 150px; text-align: right; }
+	.tot-val   { min-width: 160px; text-align: right; }
+
+	.print-totals-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0;
+		margin-top: 12px;
+		border-top: 2.5px solid #111;
+		border-bottom: 2.5px solid #111;
+	}
+	.print-totals-grid .tot-cell {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 4px;
+		padding: 12px 16px;
+		border-right: 1px solid #bbb;
+		font-size: 13pt;
+	}
+	.print-totals-grid .tot-cell:last-child { border-right: 0; }
+	.print-totals-grid .tot-cell .tot-label {
+		font-size: 10.5pt;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: #555;
+		font-weight: 600;
+	}
+	.print-totals-grid .tot-cell .tot-val {
+		font-size: 17pt;
+		font-weight: 700;
+		color: #111;
+		min-width: 0;
+		text-align: left;
+	}
+	.print-totals-grid .tot-cell-grand { background: #f6f6f6; }
+	.print-totals-grid .tot-cell-grand .tot-val { font-size: 19pt; }
 
 	.print-notes {
 		margin-top: 14px;
@@ -393,8 +428,8 @@ const PRINT_DOC_CSS = `
 	table.print-registry {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 10pt;
-		margin-top: 6px;
+		font-size: 11.5pt;
+		margin-top: 8px;
 	}
 	/* repeat header on every printed page */
 	table.print-registry thead { display: table-header-group; }
@@ -404,12 +439,12 @@ const PRINT_DOC_CSS = `
 		color: #000;
 		font-weight: 700;
 		text-align: left;
-		padding: 6px 8px;
+		padding: 8px 10px;
 		border: 1px solid #777;
 		white-space: nowrap;
 	}
 	table.print-registry tbody td {
-		padding: 5px 8px;
+		padding: 7px 10px;
 		border: 1px solid #bbb;
 		vertical-align: top;
 		word-break: break-word;
@@ -421,29 +456,28 @@ const PRINT_DOC_CSS = `
 		text-align: right;
 		border-top: 1.5px solid #555;
 	}
-	table.print-registry .reg-num   { width: 28px; text-align: center; }
-	table.print-registry .reg-date  { width: 88px; white-space: nowrap; }
-	table.print-registry .reg-cust  { min-width: 140px; font-weight: 600; }
-	table.print-registry .reg-sort  { min-width: 120px; }
-	table.print-registry .reg-qty   { width: 56px; text-align: center; }
-	table.print-registry .reg-price { width: 88px; text-align: right; white-space: nowrap; }
-	table.print-registry .reg-total { width: 96px; text-align: right; font-weight: 700; white-space: nowrap; }
-	table.print-registry .reg-status { width: 92px; white-space: nowrap; }
+	table.print-registry .reg-num   { width: 32px; text-align: center; }
+	table.print-registry .reg-date  { width: 96px; white-space: nowrap; }
+	table.print-registry .reg-cust  { min-width: 150px; font-weight: 600; }
+	table.print-registry .reg-sort  { min-width: 130px; }
+	table.print-registry .reg-qty   { width: 64px; text-align: center; }
+	table.print-registry .reg-price { width: 96px; text-align: right; white-space: nowrap; }
+	table.print-registry .reg-total { width: 106px; text-align: right; font-weight: 700; white-space: nowrap; }
 	table.print-registry .reg-empty  { color: #888; font-style: italic; text-align: center; }
 
 	.print-registry-footer {
-		margin-top: 10px;
-		padding: 10px 14px;
+		margin-top: 12px;
+		padding: 12px 16px;
 		border-top: 2.5px solid #111;
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: space-between;
 		gap: 12px 24px;
 		align-items: baseline;
-		font-size: 12pt;
+		font-size: 13pt;
 	}
 	.print-registry-footer .grand {
-		font-size: 14pt;
+		font-size: 15pt;
 		font-weight: 700;
 	}
 `;
@@ -799,12 +833,31 @@ export function printSingleOrder(
 		t
 	);
 
+	// Aggregate totals across all print rows so the customer-facing receipt
+	// shows pack count + stem count alongside the money total.
+	let totalPacks = 0;
+	let totalStems = 0;
+	for (const r of printRows) {
+		totalPacks += r.packCount;
+		totalStems += r.packCount * r.stemsPerPack;
+	}
+
 	const body = `
 		${header}
 		${html}
-		<div class="print-totals">
-			<span class="tot-label">${t('print_summary')}</span>
-			<span class="tot-val">${formatMoney(totalAmount, currencyCode)}</span>
+		<div class="print-totals-grid">
+			<div class="tot-cell">
+				<span class="tot-label">${escapeHtml(t('label_pack_count'))}</span>
+				<span class="tot-val">${totalPacks || '—'}</span>
+			</div>
+			<div class="tot-cell">
+				<span class="tot-label">${escapeHtml(t('flowers_total_raw'))}</span>
+				<span class="tot-val">${totalStems || '—'}</span>
+			</div>
+			<div class="tot-cell tot-cell-grand">
+				<span class="tot-label">${escapeHtml(t('print_summary'))}</span>
+				<span class="tot-val">${formatMoney(totalAmount, currencyCode)}</span>
+			</div>
 		</div>
 		${warehouse}
 		${order.notes ? `<div class="print-notes"><strong>${t('label_notes')}:</strong> ${escapeHtml(order.notes)}</div>` : ''}
@@ -965,13 +1018,6 @@ function formatDateShort(iso?: string): string {
 	}
 }
 
-function translateStatus(status: string, t: TranslateFn): string {
-	const key = `status_${status}`;
-	const translated = t(key);
-	// Fall back to the raw status if translation key is missing.
-	return translated === key ? status : translated;
-}
-
 export async function printOrdersRegistry(
 	ordersList: Order[],
 	getItems: GetItemsFn,
@@ -997,7 +1043,6 @@ export async function printOrdersRegistry(
 	for (const { order, items } of pairs) {
 		const dateShort = escapeHtml(formatDateShort(order.created_at));
 		const customer = escapeHtml(order.customer_name || '—');
-		const statusLabel = escapeHtml(translateStatus(order.status, t));
 
 		const orderAssignments = opts.packAssignmentsByOrder?.[order.id] ?? [];
 		const orderPackagingLog = opts.packagingLogByOrder?.[order.id] ?? [];
@@ -1022,10 +1067,8 @@ export async function printOrdersRegistry(
 					<td class="reg-sort reg-empty">—</td>
 					<td class="reg-qty">—</td>
 					<td class="reg-qty">—</td>
-					<td class="reg-qty">—</td>
 					<td class="reg-price">—</td>
 					<td class="reg-total">—</td>
-					<td class="reg-status">${statusLabel}</td>
 				</tr>
 			`);
 			continue;
@@ -1048,11 +1091,11 @@ export async function printOrdersRegistry(
 				: escapeHtml(r.sortName);
 			const sourceHint =
 				r.source === 'packaging_log'
-					? ` <span style="color:#888;font-size:8.5pt;">(${escapeHtml(
+					? ` <span style="color:#888;font-size:9pt;">(${escapeHtml(
 							t('print_row_from_packaging') || 'из упаковки'
 						)})</span>`
 					: r.source === 'legacy'
-						? ` <span style="color:#b91c1c;font-size:8.5pt;">(${escapeHtml(
+						? ` <span style="color:#b91c1c;font-size:9pt;">(${escapeHtml(
 								t('print_row_legacy') || 'архив'
 							)})</span>`
 						: '';
@@ -1065,10 +1108,8 @@ export async function printOrdersRegistry(
 					<td class="reg-sort">${sortLabel}${sourceHint}</td>
 					<td class="reg-qty">${r.packCount || '—'}</td>
 					<td class="reg-qty">${r.stemsPerPack || '—'}</td>
-					<td class="reg-qty">${r.reservedPacks}</td>
 					<td class="reg-price">${r.pricePerPack > 0 ? formatMoney(r.pricePerPack, currencyCode) : '—'}</td>
 					<td class="reg-total">${formatMoney(r.lineTotal, currencyCode)}</td>
-					${isFirst ? `<td class="reg-status" rowspan="${rowspan}">${statusLabel}</td>` : ''}
 				</tr>
 			`);
 		});
@@ -1077,9 +1118,8 @@ export async function printOrdersRegistry(
 		grandTotal += finalTotal;
 		rows.push(`
 			<tr class="order-subtotal-row">
-				<td colspan="8">${escapeHtml(t('print_summary'))}:</td>
+				<td colspan="7">${escapeHtml(t('print_summary'))}:</td>
 				<td class="reg-total">${formatMoney(finalTotal, currencyCode)}</td>
-				<td></td>
 			</tr>
 		`);
 	}
@@ -1107,16 +1147,14 @@ export async function printOrdersRegistry(
 					<th class="reg-sort">${escapeHtml(t('label_sort_col'))}</th>
 					<th class="reg-qty">${escapeHtml(t('label_pack_count'))}</th>
 					<th class="reg-qty">${escapeHtml(t('label_stems_per_pack'))}</th>
-					<th class="reg-qty">${escapeHtml(t('label_assigned_packs'))}</th>
 					<th class="reg-price">${escapeHtml(t('label_price_per_pack'))}</th>
 					<th class="reg-total">${escapeHtml(t('print_summary'))}</th>
-					<th class="reg-status">${escapeHtml(t('label_status_col'))}</th>
 				</tr>
 			</thead>
 			<tbody>
 				${
 					rows.length === 0
-						? `<tr><td colspan="10" class="reg-empty" style="padding:24px;">${escapeHtml(t('print_dialog_no_orders'))}</td></tr>`
+						? `<tr><td colspan="8" class="reg-empty" style="padding:24px;">${escapeHtml(t('print_dialog_no_orders'))}</td></tr>`
 						: rows.join('')
 				}
 			</tbody>
@@ -1342,64 +1380,69 @@ export async function printContactsMatrix(
 			table.print-matrix {
 				width: 100%;
 				border-collapse: collapse;
-				font-size: 10pt;
-				margin-top: 8px;
+				font-size: 12pt;
+				margin-top: 10px;
 			}
 			table.print-matrix thead th,
 			table.print-matrix tbody td,
 			table.print-matrix tfoot td {
 				border: 1px solid #999;
-				padding: 5px 7px;
+				padding: 7px 9px;
 				text-align: center;
 				vertical-align: middle;
 			}
 			table.print-matrix thead th {
 				background: #e6e6e6;
 				font-weight: 700;
-				font-size: 9.5pt;
+				font-size: 11pt;
 			}
 			table.print-matrix th.matrix-sort {
-				min-width: 68px;
-				max-width: 100px;
+				min-width: 76px;
+				max-width: 112px;
 				word-break: break-word;
 				white-space: normal;
-				line-height: 1.2;
+				line-height: 1.25;
 			}
 			.matrix-sort-num {
 				display: inline-block;
-				min-width: 18px;
-				padding: 1px 4px;
+				min-width: 20px;
+				padding: 1px 5px;
 				border-radius: 50%;
 				background: #111;
 				color: #fff;
-				font-size: 8pt;
+				font-size: 9.5pt;
 				font-weight: 700;
 				margin-right: 4px;
 			}
 			.matrix-swatch {
 				display: inline-block;
-				width: 9px;
-				height: 9px;
+				width: 11px;
+				height: 11px;
 				border-radius: 50%;
-				margin-right: 3px;
+				margin-right: 4px;
 				border: 1px solid rgba(0,0,0,0.2);
 				vertical-align: middle;
 			}
-			.matrix-sort-name { font-size: 8.5pt; }
+			.matrix-sort-name { font-size: 10pt; }
 			table.print-matrix th.matrix-client,
 			table.print-matrix td.matrix-client {
 				text-align: left;
 				font-weight: 600;
 				white-space: nowrap;
-				padding-left: 10px;
+				padding-left: 12px;
 			}
 			table.print-matrix td.matrix-num {
-				width: 28px;
+				width: 34px;
 				color: #555;
 				font-weight: 600;
 			}
-			table.print-matrix td.matrix-cell { font-weight: 600; }
-			table.print-matrix td.matrix-empty { color: #bbb; }
+			table.print-matrix td.matrix-cell {
+				font-weight: 700;
+				font-size: 13pt;
+			}
+			/* Empty grid cells stay visually quiet, matching the paper-journal
+			   aesthetic the user referenced. */
+			table.print-matrix td.matrix-empty { color: transparent; }
 			table.print-matrix td.matrix-total,
 			table.print-matrix td.matrix-col-total,
 			table.print-matrix td.matrix-grand {
@@ -1411,7 +1454,7 @@ export async function printContactsMatrix(
 				color: #fff;
 			}
 			.matrix-total-money {
-				font-size: 8.5pt;
+				font-size: 10pt;
 				font-weight: 500;
 				color: #555;
 				margin-top: 2px;

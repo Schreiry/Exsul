@@ -1,8 +1,10 @@
 use crate::db::Database;
 use crate::events::types::{
-    CreatePackAssignmentPayload, FlowerConstants, FlowerSort, CreateFlowerSortPayload,
-    OrderWaitingForSort, PackAssignment, PackageResult, PackagingLogEntry, UpdateFlowerSortPayload,
+    AddOrderItemPayload, CreateFlowerSortPayload, CreateOrderPayload, CreatePackAssignmentPayload,
+    FlowerConstants, FlowerSort, OrderWaitingForSort, PackAssignment, PackageResult,
+    PackageWithOrderPayload, PackageWithOrderResult, PackagingLogEntry, UpdateFlowerSortPayload,
 };
+use rusqlite::params;
 use tauri::State;
 use uuid::Uuid;
 
@@ -130,6 +132,164 @@ pub fn package_flowers(
         flowers_per_pack,
         order_id.as_deref(),
     )
+}
+
+/// Atomic variant of `package_flowers` that also creates (or skips) the
+/// associated order, order_item and pack_assignment in a single SQLite
+/// transaction. Closes the cascade where a mid-chain failure used to leave
+/// `packaging_log` written but `order_items` missing — observed as "FK
+/// constraint failed", total_amount = 0, and empty "Linked packs" in the UI.
+///
+/// Behaviour:
+///   - `customer_name` empty → pure packaging, no order created (same result
+///     shape, `order_id = None`).
+///   - `customer_name` set  → creates order + extended fields + packaging +
+///     order_item + pack_assignment + recalculates total. All-or-nothing.
+#[tauri::command]
+pub fn package_flowers_with_order(
+    db: State<'_, Database>,
+    payload: PackageWithOrderPayload,
+) -> Result<PackageWithOrderResult, String> {
+    if payload.pack_count <= 0 {
+        return Err("pack_count must be > 0".to_string());
+    }
+    if payload.sort_id.trim().is_empty() {
+        return Err("sort_id is required".to_string());
+    }
+
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    // Resolve effective flowers_per_pack up front (same logic as package_flowers)
+    // so we can use it both for packaging and for the order_item.
+    let override_fpp: Option<i32> = conn
+        .query_row(
+            "SELECT flowers_per_pack_override FROM flower_sorts WHERE id = ?1",
+            [&payload.sort_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let flowers_per_pack: i32 = match override_fpp {
+        Some(v) if v > 0 => v,
+        _ => {
+            let global: f64 = conn
+                .query_row(
+                    "SELECT value FROM flower_constants WHERE key = 'flowers_per_pack'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(10.0);
+            global.round() as i32
+        }
+    };
+    if flowers_per_pack <= 0 {
+        return Err("flowers_per_pack must be > 0".to_string());
+    }
+
+    let has_customer = payload
+        .customer_name
+        .as_ref()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+
+    let order_id_opt: Option<String> = if has_customer {
+        Some(Uuid::new_v4().to_string())
+    } else {
+        None
+    };
+    let log_id = Uuid::new_v4().to_string();
+
+    conn.execute("BEGIN IMMEDIATE", [])
+        .map_err(|e| e.to_string())?;
+
+    let work: Result<PackageWithOrderResult, String> = (|| {
+        // 1. Order + extended details (only when customer data was supplied).
+        if let Some(ref order_id) = order_id_opt {
+            let customer_name = payload
+                .customer_name
+                .as_ref()
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            let create_payload = CreateOrderPayload {
+                customer_name,
+                customer_email: payload.customer_email.clone(),
+                customer_phone: payload.customer_phone.clone(),
+                deadline: payload.deadline.clone(),
+                notes: payload.notes.clone(),
+                card_color: payload.card_color.clone(),
+                contact_id: payload.contact_id.clone(),
+                contact_location_id: payload.contact_location_id.clone(),
+            };
+            crate::db::queries::insert_order(&conn, order_id, &create_payload)?;
+
+            crate::db::queries::update_order_extended(
+                &conn,
+                order_id,
+                None,
+                payload.delivery_address.as_deref(),
+                None,
+                Some(payload.pack_count),
+            )?;
+        }
+
+        // 2. Packaging (stock movement + packaging_log row linked to the order).
+        let pkg_result = crate::db::queries::package_flowers(
+            &conn,
+            &log_id,
+            &payload.sort_id,
+            payload.pack_count,
+            flowers_per_pack,
+            order_id_opt.as_deref(),
+        )?;
+
+        // 3. order_item + pack_assignment when an order was created.
+        if let Some(ref order_id) = order_id_opt {
+            let oi_id = Uuid::new_v4().to_string();
+            let oi_payload = AddOrderItemPayload {
+                order_id: order_id.clone(),
+                item_id: payload.sort_id.clone(),
+                quantity: payload.pack_count,
+                unit_price: payload.price_per_pack,
+                specifications: None,
+                pack_count: Some(payload.pack_count),
+                stems_per_pack: Some(flowers_per_pack),
+                sort_id: Some(payload.sort_id.clone()),
+            };
+            // insert_order_item also seeds the items-shadow row and recomputes
+            // order.total_amount, so no extra plumbing is needed here.
+            crate::db::queries::insert_order_item(&conn, &oi_id, &oi_payload)?;
+
+            let pa_id = Uuid::new_v4().to_string();
+            let pa_payload = CreatePackAssignmentPayload {
+                sort_id: payload.sort_id.clone(),
+                order_id: Some(order_id.clone()),
+                pack_count: payload.pack_count,
+                stems_per_pack: flowers_per_pack,
+                note: None,
+            };
+            crate::db::queries::insert_pack_assignment(&conn, &pa_id, &pa_payload)?;
+        }
+
+        Ok(PackageWithOrderResult {
+            order_id: order_id_opt.clone(),
+            packaging_log_id: log_id.clone(),
+            new_raw_stock: pkg_result.new_raw_stock,
+            new_pkg_stock: pkg_result.new_pkg_stock,
+            stems_used: pkg_result.stems_used,
+            packs_created: pkg_result.packs_created,
+        })
+    })();
+
+    match work {
+        Ok(result) => {
+            conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+            Ok(result)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", params![]);
+            Err(e)
+        }
+    }
 }
 
 // ── Packaging Log ────────────────────────────────────────────

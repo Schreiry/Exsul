@@ -34,6 +34,8 @@ import type {
 	OrderWaitingForSort,
 	PackAssignment,
 	PackageResult,
+	PackageWithOrderPayload,
+	PackageWithOrderResult,
 	PackagingLogEntry,
 	PackStatus,
 	PriceRecord,
@@ -339,6 +341,14 @@ export const commands = {
 	// Flower ERP — Packaging
 	packageFlowers: (sortId: string, packCount: number, orderId?: string) =>
 		safeInvoke<PackageResult>('package_flowers', { sortId, packCount, orderId }),
+	/**
+	 * Atomic counterpart of `packageFlowers` — runs packaging + order +
+	 * order_item + pack_assignment + total recalculation in one SQLite
+	 * transaction. Prefer this in PackModal so a mid-chain failure can no
+	 * longer leave the warehouse↔order chain half-wired.
+	 */
+	packageFlowersWithOrder: (payload: PackageWithOrderPayload) =>
+		safeInvoke<PackageWithOrderResult>('package_flowers_with_order', { payload }),
 	getPackagingLog: (limit?: number) =>
 		safeInvoke<PackagingLogEntry[]>('get_packaging_log', { limit }),
 	getPackagingLogBySort: (sortId: string, limit?: number) =>
