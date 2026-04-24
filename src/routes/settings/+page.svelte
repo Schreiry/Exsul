@@ -12,7 +12,8 @@
 
 	const selectedCurrency = $derived(findCurrency($globalCurrency));
 	import GlassDropdown from '$lib/components/common/GlassDropdown.svelte';
-	import type { AppPreset, PricingMode } from '$lib/tauri/types';
+	import { orders } from '$lib/stores/orders';
+	import type { AppPreset, BackfillReport, PricingMode } from '$lib/tauri/types';
 
 	let currentColor = $state('#34d399');
 	let backupStatus = $state('');
@@ -112,6 +113,49 @@
 		await preset.switchTo(confirmPreset);
 		await Promise.all([inventory.load(), categories.load()]);
 		confirmPreset = null;
+	}
+
+	// ── Backfill: relink legacy orders to unlinked packaging_log rows ──
+	let backfillBusy = $state(false);
+	let backfillReport = $state<BackfillReport | null>(null);
+	let backfillError = $state('');
+
+	async function handleBackfillOrders() {
+		if (!confirm($t('confirm_backfill_legacy_orders'))) return;
+		backfillBusy = true;
+		backfillError = '';
+		backfillReport = null;
+		try {
+			const report = await commands.backfillLegacyOrders();
+			backfillReport = report;
+			// Refresh the orders cache so prints immediately pick up the
+			// newly-linked packaging_log rows and recalculated totals.
+			await orders.load();
+		} catch (err) {
+			backfillError = String(err);
+		} finally {
+			backfillBusy = false;
+		}
+	}
+
+	// ── Phase E7 — backfill contacts from existing orders ──
+	let contactsBackfillBusy = $state(false);
+	let contactsBackfillResult = $state<{ created: number; linked: number } | null>(null);
+	let contactsBackfillError = $state('');
+
+	async function handleBackfillContacts() {
+		contactsBackfillBusy = true;
+		contactsBackfillError = '';
+		contactsBackfillResult = null;
+		try {
+			contactsBackfillResult = await commands.backfillContactsFromOrders();
+			// Refresh orders + contacts so the UI reflects new linkage.
+			await orders.load();
+		} catch (err) {
+			contactsBackfillError = String(err);
+		} finally {
+			contactsBackfillBusy = false;
+		}
 	}
 
 	const presetColors = [
@@ -351,6 +395,76 @@
 				<span class="toggle-slider"></span>
 			</span>
 		</label>
+	</section>
+	{/if}
+
+	<!-- ── Data repair (flowers only) ─────────────────────────── -->
+	{#if $preset === 'flowers'}
+	<section class="section">
+		<h2>{$t('label_data_repair')}</h2>
+		<p class="hint">{$t('hint_backfill_legacy_orders')}</p>
+		<div class="backup-actions">
+			<button
+				class="btn-secondary"
+				onclick={handleBackfillOrders}
+				disabled={backfillBusy}
+			>
+				{backfillBusy ? '…' : '🔗 ' + $t('action_backfill_legacy_orders')}
+			</button>
+		</div>
+
+		{#if backfillError}
+			<p class="backup-status error">⚠ {backfillError}</p>
+		{/if}
+
+		{#if backfillReport}
+			<div class="backfill-report">
+				<div class="backfill-summary">
+					<span>{$t('backfill_total')}: <strong>{backfillReport.total_legacy_orders}</strong></span>
+					<span class="bf-ok">{$t('backfill_repaired')}: <strong>{backfillReport.repaired}</strong></span>
+					<span class="bf-warn">{$t('backfill_ambiguous')}: <strong>{backfillReport.ambiguous}</strong></span>
+					<span class="bf-err">{$t('backfill_no_match')}: <strong>{backfillReport.no_match}</strong></span>
+				</div>
+				{#if backfillReport.details.length > 0}
+					<details class="backfill-details">
+						<summary>{$t('backfill_details')} ({backfillReport.details.length})</summary>
+						<ul>
+							{#each backfillReport.details as d (d.order_id)}
+								<li class="bf-row bf-{d.status}">
+									<span class="bf-name">{d.customer_name || '—'}</span>
+									<span class="bf-msg">{d.message}</span>
+								</li>
+							{/each}
+						</ul>
+					</details>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Phase E7 — contacts backfill -->
+		<p class="hint" style="margin-top: 18px;">{$t('contact_backfill_hint')}</p>
+		<div class="backup-actions">
+			<button
+				class="btn-secondary"
+				onclick={handleBackfillContacts}
+				disabled={contactsBackfillBusy}
+			>
+				{contactsBackfillBusy ? '…' : '👥 ' + $t('contact_backfill_button')}
+			</button>
+		</div>
+
+		{#if contactsBackfillError}
+			<p class="backup-status error">⚠ {contactsBackfillError}</p>
+		{/if}
+
+		{#if contactsBackfillResult}
+			<p class="backup-status success">
+				✓ {$t('contact_backfill_result', {
+					created: contactsBackfillResult.created,
+					linked: contactsBackfillResult.linked,
+				})}
+			</p>
+		{/if}
 	</section>
 	{/if}
 

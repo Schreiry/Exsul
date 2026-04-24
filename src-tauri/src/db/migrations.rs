@@ -77,6 +77,27 @@ const MIGRATIONS: &[Migration] = &[
         name: "orders_sort_id_backfill",
         sql: include_str!("../../migrations/014_orders_sort_id_backfill.sql"),
     },
+    Migration {
+        version: 15,
+        name: "deletion_indexes",
+        sql: include_str!("../../migrations/015_deletion_indexes.sql"),
+    },
+    // orders.card_color — must be applied before any order CRUD runs, since
+    // insert_order/get_orders reference the column unconditionally.
+    Migration {
+        version: 16,
+        name: "orders_card_color",
+        sql: include_str!("../../migrations/016_orders_card_color.sql"),
+    },
+    // Contacts directory + optional orders.contact_id / contact_location_id.
+    // Order SELECTs reference these columns unconditionally after Phase E, so
+    // the migration MUST be registered (the main regression earlier came from
+    // forgetting to list migration files here).
+    Migration {
+        version: 17,
+        name: "contacts",
+        sql: include_str!("../../migrations/017_contacts.sql"),
+    },
 ];
 
 /// Execute a migration's SQL idempotently:

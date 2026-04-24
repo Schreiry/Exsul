@@ -1,7 +1,7 @@
 use crate::db::Database;
 use crate::events::types::{
     CreatePackAssignmentPayload, FlowerConstants, FlowerSort, CreateFlowerSortPayload,
-    PackAssignment, PackageResult, PackagingLogEntry, UpdateFlowerSortPayload,
+    OrderWaitingForSort, PackAssignment, PackageResult, PackagingLogEntry, UpdateFlowerSortPayload,
 };
 use tauri::State;
 use uuid::Uuid;
@@ -164,6 +164,18 @@ pub fn get_packaging_log_by_order(
 ) -> Result<Vec<PackagingLogEntry>, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     crate::db::queries::get_packaging_log_by_order(&conn, &order_id)
+}
+
+/// Active orders (`pending` or `in_progress`) that have line items referencing
+/// the given sort, annotated with reserved-vs-ordered pack counts so the
+/// greenhouse UI can surface reservations and shortages on the sort card.
+#[tauri::command]
+pub fn get_orders_waiting_for_sort(
+    db: State<'_, Database>,
+    sort_id: String,
+) -> Result<Vec<OrderWaitingForSort>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::get_orders_waiting_for_sort(&conn, &sort_id)
 }
 
 /// Delete a packaging_log entry and roll back the stock movement

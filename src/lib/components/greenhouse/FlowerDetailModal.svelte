@@ -2,7 +2,10 @@
 	import { convertFileSrc } from '@tauri-apps/api/core';
 	import { flowerSorts } from '$lib/stores/flowers';
 	import { showDetailedPricing } from '$lib/stores/appSettings';
-	import type { FlowerSort, HarvestLogEntry } from '$lib/tauri/types';
+	import { commands } from '$lib/tauri/commands';
+	import { t } from '$lib/stores/i18n';
+	import { formatCountdown } from '$lib/utils/countdown';
+	import type { FlowerSort, HarvestLogEntry, OrderWaitingForSort } from '$lib/tauri/types';
 
 	interface Props {
 		sort: FlowerSort;
@@ -27,6 +30,12 @@
 	// Harvest log
 	let harvestLog = $state<HarvestLogEntry[]>([]);
 	let logLoading = $state(true);
+
+	// Orders that still need packs of this sort (pending/in_progress with
+	// order_items referencing sort.id). Driven by a single read query on mount —
+	// reservations are operator-driven and don't change while the modal is open.
+	let waitingOrders = $state<OrderWaitingForSort[]>([]);
+	let waitingLoading = $state(true);
 
 	// Add harvest state
 	let harvestDelta = $state(0);
@@ -61,6 +70,48 @@
 			logLoading = false;
 		});
 	});
+
+	// Reload waiting orders whenever the underlying sort changes (e.g. after
+	// the user deletes a reservation elsewhere and the parent rebinds).
+	$effect(() => {
+		waitingLoading = true;
+		commands
+			.getOrdersWaitingForSort(sort.id)
+			.then((rows) => {
+				waitingOrders = rows ?? [];
+			})
+			.catch((e) => {
+				console.warn('Failed to load waiting orders:', e);
+				waitingOrders = [];
+			})
+			.finally(() => {
+				waitingLoading = false;
+			});
+	});
+
+	const totalOrderedByWaiting = $derived(
+		waitingOrders.reduce((s, o) => s + o.ordered_packs, 0)
+	);
+	const totalReservedByWaiting = $derived(
+		waitingOrders.reduce((s, o) => s + o.reserved_packs, 0)
+	);
+	const totalShortage = $derived(
+		waitingOrders.reduce((s, o) => s + o.shortage, 0)
+	);
+
+	function formatDeadline(deadline: string | null | undefined): string {
+		if (!deadline) return '—';
+		try {
+			return new Date(deadline).toLocaleString('ru', {
+				day: '2-digit',
+				month: 'short',
+				hour: '2-digit',
+				minute: '2-digit',
+			});
+		} catch {
+			return deadline;
+		}
+	}
 
 	async function handleSaveEdit() {
 		editSaving = true;
@@ -322,6 +373,60 @@
 				</button>
 			</div>
 
+			<!-- Orders waiting for this sort — driven by get_orders_waiting_for_sort.
+			     Shown above the chart because it's the more actionable panel: the
+			     operator usually opens the modal to decide what to pack next. -->
+			{#if !waitingLoading && waitingOrders.length > 0}
+				<div class="waiting-section">
+					<div class="waiting-header">
+						<h3 class="section-title">{$t('section_waiting_orders') ?? 'Заказы, ожидающие сорт'}</h3>
+						<div class="waiting-totals">
+							<span class="wt-chip">{waitingOrders.length} {waitingOrders.length === 1 ? 'заказ' : 'заказ(ов)'}</span>
+							<span class="wt-chip wt-ordered">{totalOrderedByWaiting} {$t('label_pack_count') ?? 'уп.'}</span>
+							<span class="wt-chip wt-reserved" title={$t('label_assigned_packs')}>↺ {totalReservedByWaiting}</span>
+							{#if totalShortage > 0}
+								<span class="wt-chip wt-shortage" title={$t('label_deficit')}>⚠ {totalShortage}</span>
+							{/if}
+						</div>
+					</div>
+					<div class="waiting-list">
+						{#each waitingOrders as o (o.order_id)}
+							<div class="waiting-row" class:wr-shortage={o.shortage > 0}>
+								<div class="wr-head">
+									<span class="wr-customer">{o.customer_name}</span>
+									<span class="wr-status wr-s-{o.status}">{$t('status_' + o.status) ?? o.status}</span>
+								</div>
+								<div class="wr-meta">
+									<span class="wr-deadline" class:wr-overdue={o.deadline && new Date(o.deadline) < new Date()}>
+										<svg viewBox="0 0 24 24" width="10" height="10" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+										{formatDeadline(o.deadline)}
+										{#if o.deadline}
+											<span class="wr-countdown">{formatCountdown(o.deadline)}</span>
+										{/if}
+									</span>
+								</div>
+								<div class="wr-numbers">
+									<span class="wr-num">
+										<span class="wr-num-label">{$t('label_pack_count') ?? 'Заказано'}</span>
+										<span class="wr-num-val">{o.ordered_packs}</span>
+									</span>
+									<span class="wr-num">
+										<span class="wr-num-label">{$t('label_assigned_packs')}</span>
+										<span class="wr-num-val wr-num-reserved">{o.reserved_packs}</span>
+									</span>
+									{#if o.shortage > 0}
+										<span class="wr-num">
+											<span class="wr-num-label">{$t('label_deficit')}</span>
+											<span class="wr-num-val wr-num-shortage">{o.shortage}</span>
+										</span>
+									{/if}
+								</div>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
+
 			<!-- Mini chart: last 30 days -->
 			<div class="chart-section">
 				<h3 class="section-title">Сбор за 30 дней</h3>
@@ -526,6 +631,104 @@
 		font-size: 0.9rem;
 		transition: background 0.15s, opacity 0.15s;
 	}
+
+	/* Waiting orders */
+	.waiting-section { display: flex; flex-direction: column; gap: 10px; }
+	.waiting-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.waiting-totals { display: flex; gap: 6px; flex-wrap: wrap; }
+	.wt-chip {
+		font-size: 0.7rem;
+		padding: 2px 8px;
+		border-radius: 20px;
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		color: var(--color-outline);
+		font-variant-numeric: tabular-nums;
+	}
+	.wt-chip.wt-ordered { color: var(--color-on-surface); }
+	.wt-chip.wt-reserved {
+		color: #f59e0b;
+		border-color: color-mix(in srgb, #f59e0b 40%, transparent);
+	}
+	.wt-chip.wt-shortage {
+		color: var(--color-alert-red, #ef4444);
+		border-color: color-mix(in srgb, var(--color-alert-red, #ef4444) 40%, transparent);
+		background: color-mix(in srgb, var(--color-alert-red, #ef4444) 8%, transparent);
+	}
+
+	.waiting-list {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.waiting-row {
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
+		border-radius: 12px;
+		padding: 10px 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		transition: border-color 0.15s, background 0.15s;
+	}
+	.waiting-row.wr-shortage {
+		border-color: color-mix(in srgb, var(--color-alert-red, #ef4444) 40%, transparent);
+		background: color-mix(in srgb, var(--color-alert-red, #ef4444) 5%, var(--glass-bg));
+	}
+	.wr-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+	.wr-customer { font-size: 0.9rem; font-weight: 600; color: var(--color-on-surface); }
+	.wr-status {
+		font-size: 0.66rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 2px 7px;
+		border-radius: 999px;
+		border: 1px solid var(--glass-border);
+	}
+	.wr-s-pending { color: #f59e0b; border-color: color-mix(in srgb, #f59e0b 35%, transparent); }
+	.wr-s-in_progress { color: #3b82f6; border-color: color-mix(in srgb, #3b82f6 35%, transparent); }
+	.wr-meta { display: flex; align-items: center; gap: 10px; font-size: 0.78rem; color: var(--color-outline); }
+	.wr-deadline { display: inline-flex; align-items: center; gap: 5px; }
+	.wr-deadline.wr-overdue { color: var(--color-alert-red, #ef4444); }
+	.wr-countdown {
+		padding: 1px 7px;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+		color: var(--color-primary);
+		font-weight: 500;
+		font-size: 0.72rem;
+	}
+	.wr-numbers { display: flex; gap: 10px; flex-wrap: wrap; }
+	.wr-num {
+		display: inline-flex;
+		flex-direction: column;
+		background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+		border: 1px solid var(--glass-border);
+		border-radius: 8px;
+		padding: 5px 10px;
+		min-width: 68px;
+	}
+	.wr-num-label {
+		font-size: 0.62rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		color: var(--color-outline);
+	}
+	.wr-num-val {
+		font-size: 0.95rem;
+		font-weight: 700;
+		color: var(--color-on-surface);
+		font-variant-numeric: tabular-nums;
+	}
+	.wr-num-val.wr-num-reserved { color: #f59e0b; }
+	.wr-num-val.wr-num-shortage { color: var(--color-alert-red, #ef4444); }
 
 	/* Chart */
 	.chart-section { display: flex; flex-direction: column; gap: 10px; }

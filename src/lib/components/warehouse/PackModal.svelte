@@ -3,7 +3,8 @@
 	import { orders } from '$lib/stores/orders';
 	import { commands } from '$lib/tauri/commands';
 	import FlowerCard from '$lib/components/greenhouse/FlowerCard.svelte';
-	import type { FlowerSort } from '$lib/tauri/types';
+	import ContactPicker from '$lib/components/contacts/ContactPicker.svelte';
+	import type { Contact, FlowerSort } from '$lib/tauri/types';
 
 	interface Props {
 		onclose: () => void;
@@ -27,6 +28,34 @@
 	let deliveryAddress = $state('');
 	let deadline = $state('');
 	let notes = $state('');
+	let cardColor = $state('');
+
+	// Phase E6 — optional contact attachment for the created order.
+	let selectedContact = $state<Contact | null>(null);
+	let selectedLocationId = $state<string>('');
+
+	async function handlePickContact(c: Contact) {
+		selectedContact = c;
+		customerName = c.name + (c.surname ? ` ${c.surname}` : '');
+		customerEmail = c.email ?? customerEmail;
+		customerPhone = c.phone ?? customerPhone;
+		if (c.default_address && !deliveryAddress) deliveryAddress = c.default_address;
+		try {
+			const locs = await commands.getContactLocations(c.id);
+			const def = locs.find((l) => l.is_default) ?? locs[0];
+			if (def) {
+				selectedLocationId = def.id;
+				if (!deliveryAddress) deliveryAddress = def.address;
+			}
+		} catch (e) {
+			console.warn('Failed to load contact locations:', e);
+		}
+	}
+
+	function handleClearContact() {
+		selectedContact = null;
+		selectedLocationId = '';
+	}
 
 	let saving = $state(false);
 	let error = $state('');
@@ -85,6 +114,9 @@
 					customer_phone: customerPhone.trim() || undefined,
 					deadline: deadline || undefined,
 					notes: notes.trim() || undefined,
+					card_color: cardColor || undefined,
+					contact_id: selectedContact?.id,
+					contact_location_id: selectedLocationId || undefined,
 				});
 				await commands.updateOrderExtended(
 					orderId,
@@ -130,7 +162,8 @@
 			packCount = 1;
 			pricePerPackOverride = null;
 			customerName = ''; customerPhone = ''; customerEmail = '';
-			deliveryAddress = ''; deadline = ''; notes = '';
+			deliveryAddress = ''; deadline = ''; notes = ''; cardColor = '';
+			selectedContact = null; selectedLocationId = '';
 			ondone?.();
 			setTimeout(() => {
 				successMsg = '';
@@ -282,6 +315,16 @@
 					<summary class="order-summary">Создать заказ (необязательно)</summary>
 					<div class="order-fields">
 						<div class="field">
+							<label class="field-label">Контакт</label>
+							<ContactPicker
+								selectedId={selectedContact?.id ?? ''}
+								freeName={customerName}
+								onselect={(c) => { void handlePickContact(c); }}
+								onclear={handleClearContact}
+								onfreeName={(v) => (customerName = v)}
+							/>
+						</div>
+						<div class="field">
 							<label class="field-label">Клиент *</label>
 							<input class="field-input" type="text" bind:value={customerName} placeholder="Имя клиента" />
 						</div>
@@ -304,6 +347,32 @@
 						<div class="field">
 							<label class="field-label">Заметки</label>
 							<textarea class="field-input" bind:value={notes} rows="2" placeholder="Дополнительно…"></textarea>
+						</div>
+						<div class="field">
+							<label class="field-label" for="pack-card-color">Цвет карточки заказа</label>
+							<div class="color-row">
+								<input
+									id="pack-card-color"
+									class="color-swatch-input"
+									type="color"
+									value={cardColor || '#888888'}
+									oninput={(e) => (cardColor = (e.currentTarget as HTMLInputElement).value)}
+								/>
+								<input
+									class="field-input color-hex"
+									type="text"
+									placeholder="#rrggbb — авто"
+									bind:value={cardColor}
+								/>
+								{#if cardColor}
+									<button
+										type="button"
+										class="btn-reset-color"
+										title="Авто"
+										onclick={() => (cardColor = '')}
+									>↺</button>
+								{/if}
+							</div>
 						</div>
 					</div>
 				</details>
@@ -587,6 +656,38 @@
 	.field-input:focus { border-color: var(--color-primary); }
 
 	.error-msg { font-size: 0.8rem; color: var(--color-alert-red); margin: 0; }
+
+	/* Card-color row (Phase D) */
+	.color-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.color-swatch-input {
+		width: 32px;
+		height: 32px;
+		padding: 0;
+		border: 1px solid var(--glass-border);
+		border-radius: 8px;
+		background: transparent;
+		cursor: pointer;
+		flex-shrink: 0;
+	}
+	.color-swatch-input::-webkit-color-swatch { border: none; border-radius: 6px; }
+	.color-swatch-input::-webkit-color-swatch-wrapper { padding: 2px; border-radius: 8px; }
+	.color-hex { flex: 1; }
+	.btn-reset-color {
+		background: none;
+		border: none;
+		color: var(--color-outline);
+		cursor: pointer;
+		padding: 2px 6px;
+		border-radius: 6px;
+		font-size: 0.95rem;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+	.btn-reset-color:hover { color: var(--color-primary); background: var(--glass-bg-hover); }
 
 	/* Confirm button */
 	.btn-confirm {

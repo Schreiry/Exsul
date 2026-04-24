@@ -151,6 +151,46 @@ pub struct Order {
     pub pack_count_ordered: i32,
     pub pack_count_ready: i32,
     pub deadline_confirmed: bool,
+    // Personalization (migration 016) — HEX color (#rrggbb) used as
+    // left-edge accent and light background tint on the order card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_color: Option<String>,
+    // Contact linkage (migration 017) — optional. Free-form customer_name/
+    // email/phone stays as-is for legacy orders; contact_id is a soft FK
+    // (no REFERENCES) so a contact that hasn't synced yet doesn't block the
+    // order projection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_location_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateOrderPayload {
+    pub order_id: String,
+    pub customer_name: Option<String>,
+    pub customer_email: Option<String>,
+    pub customer_phone: Option<String>,
+    pub customer_company: Option<String>,
+    pub delivery_address: Option<String>,
+    pub delivery_notes: Option<String>,
+    pub deadline: Option<String>,
+    pub notes: Option<String>,
+    pub card_color: Option<String>,
+    #[serde(default)]
+    pub contact_id: Option<String>,
+    #[serde(default)]
+    pub contact_location_id: Option<String>,
+    // Tri-state clears: when `true`, the corresponding field is set
+    // to NULL in storage regardless of the Some/None value above.
+    // This is how the UI says "remove the color" or "remove the
+    // deadline" — Option::None alone means "don't touch this field".
+    #[serde(default)]
+    pub clear_card_color: bool,
+    #[serde(default)]
+    pub clear_deadline: bool,
+    #[serde(default)]
+    pub clear_contact: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,6 +217,12 @@ pub struct CreateOrderPayload {
     pub customer_phone: Option<String>,
     pub deadline: Option<String>,
     pub notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_location_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -453,6 +499,20 @@ pub struct OrderShortage {
     pub shortage: i32,
 }
 
+// Per-sort listing of orders that still need packs of that sort.
+// Populated by a read-only aggregate query — not stored.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderWaitingForSort {
+    pub order_id: String,
+    pub customer_name: String,
+    pub deadline: Option<String>,
+    pub status: String,
+    pub ordered_packs: i32,   // total pack_count across order_items for this sort
+    pub reserved_packs: i32,  // pack_assignments.pack_count where status != 'delivered'
+    pub shortage: i32,        // max(0, ordered_packs - reserved_packs)
+    pub created_at: String,
+}
+
 // ============================================================
 // App settings (migration 012)
 // ============================================================
@@ -462,6 +522,91 @@ pub struct AppSetting {
     pub key: String,
     pub value: String,
     pub value_type: String,
+}
+
+// ============================================================
+// Contacts (migration 017) — Phase E
+// ============================================================
+
+/// A customer/contact record. `order_count` and `total_spent` are
+/// aggregates computed on-the-fly by JOIN on orders; they are not
+/// stored in the contacts table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Contact {
+    pub id: String,
+    pub name: String,
+    pub surname: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub company: Option<String>,
+    pub notes: Option<String>,
+    pub photo_path: Option<String>,
+    pub card_color: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    // Aggregates — populated in list/detail queries, default to 0 when
+    // the contact has no orders yet.
+    #[serde(default)]
+    pub order_count: i64,
+    #[serde(default)]
+    pub total_spent: f64,
+    // Default location shortcut — first row where is_default = 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_address: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContactLocation {
+    pub id: String,
+    pub contact_id: String,
+    pub label: Option<String>,
+    pub address: String,
+    pub is_default: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateContactPayload {
+    pub name: String,
+    pub surname: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub company: Option<String>,
+    pub notes: Option<String>,
+    pub card_color: Option<String>,
+    /// Optional single default address created together with the contact.
+    /// Nil → only the contacts row is created.
+    pub default_address: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateContactPayload {
+    pub contact_id: String,
+    pub name: Option<String>,
+    pub surname: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub company: Option<String>,
+    pub notes: Option<String>,
+    pub card_color: Option<String>,
+    #[serde(default)]
+    pub clear_card_color: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateContactLocationPayload {
+    pub contact_id: String,
+    pub label: Option<String>,
+    pub address: String,
+    #[serde(default)]
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateContactLocationPayload {
+    pub location_id: String,
+    pub label: Option<String>,
+    pub address: Option<String>,
 }
 
 // ============================================================

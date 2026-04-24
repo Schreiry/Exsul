@@ -117,6 +117,7 @@ pub fn run() {
             commands::flowers::get_packaging_log,
             commands::flowers::get_packaging_log_by_sort,
             commands::flowers::get_packaging_log_by_order,
+            commands::flowers::get_orders_waiting_for_sort,
             commands::flowers::update_pack_status,
             commands::flowers::delete_packaging_entry,
             commands::flowers::delete_all_packaging,
@@ -133,6 +134,7 @@ pub fn run() {
             commands::greenhouse::log_greenhouse_harvest,
             commands::greenhouse::get_harvest_log,
             // ── Orders extended ──
+            commands::orders::update_order,
             commands::orders::update_order_extended,
             commands::orders::confirm_order_deadline,
             commands::orders::get_overdue_unconfirmed_orders,
@@ -142,6 +144,22 @@ pub fn run() {
             commands::app_settings::get_setting,
             commands::app_settings::set_setting,
             commands::app_settings::get_all_settings,
+            // ── Backfill / Data repair ──
+            commands::backfill::backfill_legacy_orders,
+            // ── Contacts (Phase E) ──
+            commands::contacts::get_contacts,
+            commands::contacts::get_contact,
+            commands::contacts::create_contact,
+            commands::contacts::update_contact,
+            commands::contacts::delete_contact,
+            commands::contacts::get_contact_locations,
+            commands::contacts::add_contact_location,
+            commands::contacts::update_contact_location,
+            commands::contacts::delete_contact_location,
+            commands::contacts::set_default_contact_location,
+            commands::contacts::get_orders_for_contact,
+            commands::contacts::save_contact_photo,
+            commands::contacts::backfill_contacts_from_orders,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

@@ -1,7 +1,9 @@
 pub mod app_settings;
 pub mod audit;
+pub mod backfill;
 pub mod backup;
 pub mod categories;
+pub mod contacts;
 pub mod events;
 pub mod flowers;
 pub mod greenhouse;

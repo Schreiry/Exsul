@@ -5,6 +5,7 @@ import type {
 	CreateOrderPayload,
 	Order,
 	OrderItem,
+	UpdateOrderPayload,
 } from '$lib/tauri/types';
 
 function createOrderStore() {
@@ -28,6 +29,10 @@ function createOrderStore() {
 		},
 		async updateStatus(orderId: string, status: string): Promise<void> {
 			await commands.updateOrderStatus(orderId, status);
+			await load();
+		},
+		async update(payload: UpdateOrderPayload): Promise<void> {
+			await commands.updateOrder(payload);
 			await load();
 		},
 		async addItem(payload: AddOrderItemPayload): Promise<string> {

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { flowerSorts, totalRawStems, totalPacks, flowerConstants } from '$lib/stores/flowers';
-	import type { FlowerSort } from '$lib/tauri/types';
+	import { commands } from '$lib/tauri/commands';
+	import type { FlowerSort, PackAssignment } from '$lib/tauri/types';
 	import FlowerCard from '$lib/components/greenhouse/FlowerCard.svelte';
 	import FlowerDetailModal from '$lib/components/greenhouse/FlowerDetailModal.svelte';
 	import AddSortModal from '$lib/components/greenhouse/AddSortModal.svelte';
@@ -13,11 +14,45 @@
 	let manageSorts = $state(false);
 	let searchQuery = $state('');
 	let filterMode = $state<'all' | 'raw' | 'pkg'>('all');
+	let packAssignments = $state<PackAssignment[]>([]);
+
+	// Reload reservations after any navigation back to this page. Pure read,
+	// cheap enough (single SELECT). Order mutations elsewhere will be picked up
+	// next time the user visits greenhouse; badges aren't live-synced because
+	// reservations only change when the operator explicitly packs/assigns.
+	async function loadAssignments() {
+		try {
+			packAssignments = await commands.getPackAssignments();
+		} catch (e) {
+			console.warn('Failed to load pack assignments:', e);
+			packAssignments = [];
+		}
+	}
 
 	// ── Load ──────────────────────────────────────────────────────
 	onMount(async () => {
 		await flowerSorts.load();
 		await flowerConstants.load();
+		await loadAssignments();
+	});
+
+	// ── Derived: reservations per sort ────────────────────────────
+	// Built once per pack_assignments change so the O(N) scan doesn't run per
+	// card. `delivered` rows are excluded — those packs have physically left
+	// and shouldn't count as active reservations anymore.
+	const reservationsBySort = $derived.by(() => {
+		const reserved: Record<string, number> = {};
+		const orderSets: Record<string, Set<string>> = {};
+		for (const a of packAssignments) {
+			if (!a.order_id) continue;
+			if (a.status === 'delivered') continue;
+			reserved[a.sort_id] = (reserved[a.sort_id] ?? 0) + a.pack_count;
+			if (!orderSets[a.sort_id]) orderSets[a.sort_id] = new Set();
+			orderSets[a.sort_id].add(a.order_id);
+		}
+		const waiting: Record<string, number> = {};
+		for (const [sid, set] of Object.entries(orderSets)) waiting[sid] = set.size;
+		return { reserved, waiting };
 	});
 
 	// ── Derived ───────────────────────────────────────────────────
@@ -134,7 +169,12 @@
 	{:else}
 		<div class="card-grid">
 			{#each visibleSorts() as sort (sort.id)}
-				<FlowerCard {sort} onclick={() => (detailSort = sort)} />
+				<FlowerCard
+					{sort}
+					reservedPacks={reservationsBySort.reserved[sort.id] ?? 0}
+					waitingOrders={reservationsBySort.waiting[sort.id] ?? 0}
+					onclick={() => (detailSort = sort)}
+				/>
 			{/each}
 		</div>
 	{/if}
@@ -145,7 +185,7 @@
 {#if detailSort}
 	<FlowerDetailModal
 		bind:sort={detailSort}
-		onclose={() => (detailSort = null)}
+		onclose={() => { detailSort = null; loadAssignments(); }}
 	/>
 {/if}
 

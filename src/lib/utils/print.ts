@@ -6,6 +6,7 @@ import type {
 	Item,
 	PackAssignment,
 	PackagingLogEntry,
+	Contact,
 } from '$lib/tauri/types';
 import { computeLine, resolveItemName } from '$lib/utils/orderLine';
 
@@ -1133,4 +1134,297 @@ export async function printOrdersRegistry(
 
 	const body = header + tableHtml + totalsFooter;
 	printViaIframe(t('print_registry_title'), body);
+}
+
+// ────────────────────────────────────────────────────────────────
+// Contacts × Sorts matrix print.
+//
+// Excel-style pivot: rows are clients, columns are flower sorts,
+// cell = sum of packs ordered by that client for that sort in the
+// window. Rightmost column and bottom row are totals — the bottom-
+// right cell is the grand total, and "row totals sum == col totals
+// sum == grand total" is the debit/credit invariant the user asked
+// for. Orders without a contact are grouped under a single row.
+// ────────────────────────────────────────────────────────────────
+export async function printContactsMatrix(
+	ordersList: Order[],
+	getItems: GetItemsFn,
+	flowerSorts: FlowerSort[],
+	inventoryItems: Item[],
+	constants: FlowerConstants,
+	contactsList: Contact[],
+	currencyCode: string,
+	t: TranslateFn,
+	range?: { from: string; to: string },
+	opts: PrintMultiOptions = {}
+): Promise<void> {
+	// Build the cell map in a single pass: for each order, resolve its print
+	// rows (order_items → packaging_log → legacy fallback, same pipeline the
+	// registry uses) and accumulate pack_count by (client_key, sort_id).
+	type CellKey = string; // "<clientKey>|<sortId>"
+	const NO_CONTACT = '__none__';
+	const cellPacks = new Map<CellKey, number>();
+	const cellMoney = new Map<CellKey, number>();
+	const rowPacks = new Map<string, number>();
+	const rowMoney = new Map<string, number>();
+	const colPacks = new Map<string, number>();
+	const colMoney = new Map<string, number>();
+	const rowLabels = new Map<string, string>();       // clientKey → display name
+	const colLabels = new Map<string, string>();       // sortId → display name
+	const colColors = new Map<string, string | null>();// sortId → hex (optional)
+	let grandPacks = 0;
+	let grandMoney = 0;
+
+	// Seed "No contact" row lazily — only insert it if any order lacks a
+	// contact_id, to keep the printed grid tight when every order is tagged.
+	function clientKey(order: Order): { key: string; label: string } {
+		if (order.contact_id) {
+			const c = contactsList.find((x) => x.id === order.contact_id);
+			const display = c
+				? c.name + (c.surname ? ` ${c.surname}` : '')
+				: order.customer_name || '—';
+			return { key: order.contact_id, label: display };
+		}
+		return {
+			key: NO_CONTACT,
+			label: order.customer_name?.trim() || t('print_matrix_no_contact') || '—',
+		};
+	}
+
+	const pairs = await Promise.all(
+		ordersList.map(async (o) => ({ order: o, items: await getItems(o.id) }))
+	);
+
+	for (const { order, items } of pairs) {
+		const rows = buildPrintRows(
+			order,
+			items,
+			flowerSorts,
+			inventoryItems,
+			constants,
+			opts.packagingLogByOrder?.[order.id] ?? [],
+			opts.packAssignmentsByOrder?.[order.id] ?? []
+		);
+		const { key: rKey, label: rLabel } = clientKey(order);
+		if (!rowLabels.has(rKey)) rowLabels.set(rKey, rLabel);
+
+		for (const r of rows) {
+			if (r.packCount <= 0) continue;
+			// Collapse legacy rows (sortId = null) under a synthetic "—" column so
+			// we never silently drop them. The user needs the invariant to hold.
+			const cKey = r.sortId ?? '__legacy__';
+			if (!colLabels.has(cKey)) {
+				const label = r.variety ? `${r.sortName} — ${r.variety}` : r.sortName;
+				colLabels.set(cKey, label);
+				// Prefer the flower sort's color_hex when present — so the header
+				// cell can show a swatch without guessing from the HEX picker.
+				const sort = r.sortId
+					? flowerSorts.find((s) => s.id === r.sortId)
+					: undefined;
+				colColors.set(cKey, sort?.color_hex ?? null);
+			}
+			const cellK = `${rKey}|${cKey}`;
+			cellPacks.set(cellK, (cellPacks.get(cellK) ?? 0) + r.packCount);
+			cellMoney.set(cellK, (cellMoney.get(cellK) ?? 0) + r.lineTotal);
+			rowPacks.set(rKey, (rowPacks.get(rKey) ?? 0) + r.packCount);
+			rowMoney.set(rKey, (rowMoney.get(rKey) ?? 0) + r.lineTotal);
+			colPacks.set(cKey, (colPacks.get(cKey) ?? 0) + r.packCount);
+			colMoney.set(cKey, (colMoney.get(cKey) ?? 0) + r.lineTotal);
+			grandPacks += r.packCount;
+			grandMoney += r.lineTotal;
+		}
+	}
+
+	const rowKeys = Array.from(rowLabels.keys()).sort((a, b) => {
+		// Sort by total packs desc, but keep the "no contact" row at the bottom.
+		if (a === NO_CONTACT) return 1;
+		if (b === NO_CONTACT) return -1;
+		return (rowPacks.get(b) ?? 0) - (rowPacks.get(a) ?? 0);
+	});
+	const colKeys = Array.from(colLabels.keys()).sort(
+		(a, b) => (colPacks.get(b) ?? 0) - (colPacks.get(a) ?? 0)
+	);
+
+	const rangeLine =
+		range && (range.from || range.to)
+			? `<div class="print-registry-range">${escapeHtml(t('print_registry_period'))}: ${escapeHtml(range.from)} — ${escapeHtml(range.to)}</div>`
+			: '';
+
+	const header = `
+		<div class="print-registry-header">
+			<h1>${escapeHtml(t('print_matrix_title'))}</h1>
+			${rangeLine}
+			<div class="print-header-date">${escapeHtml(t('print_date'))}: ${escapeHtml(formatDateTime(new Date().toISOString()))}</div>
+		</div>
+	`;
+
+	if (rowKeys.length === 0 || colKeys.length === 0) {
+		const body = header + `<p style="padding:24px;text-align:center;color:#666;font-size:12pt;">${escapeHtml(t('print_matrix_empty'))}</p>`;
+		printViaIframe(t('print_matrix_title'), body);
+		return;
+	}
+
+	// Header row: "#", "Клиент", <sort columns...>, "Итого (клиент)"
+	const thCols = colKeys
+		.map((ck, idx) => {
+			const label = colLabels.get(ck) ?? '—';
+			const color = colColors.get(ck);
+			const swatch = color
+				? `<span class="matrix-swatch" style="background:${escapeHtml(color)}"></span>`
+				: '';
+			return `<th class="matrix-sort" title="${escapeHtml(label)}"><span class="matrix-sort-num">${idx + 1}</span>${swatch}<span class="matrix-sort-name">${escapeHtml(label)}</span></th>`;
+		})
+		.join('');
+
+	const bodyRows = rowKeys
+		.map((rk, rIdx) => {
+			const label = rowLabels.get(rk) ?? '—';
+			const cells = colKeys
+				.map((ck) => {
+					const packs = cellPacks.get(`${rk}|${ck}`) ?? 0;
+					return `<td class="matrix-cell ${packs === 0 ? 'matrix-empty' : ''}">${packs > 0 ? packs : ''}</td>`;
+				})
+				.join('');
+			const rowTotal = rowPacks.get(rk) ?? 0;
+			const rowMoneyVal = rowMoney.get(rk) ?? 0;
+			return `
+				<tr>
+					<td class="matrix-num">${rIdx + 1}</td>
+					<td class="matrix-client">${escapeHtml(label)}</td>
+					${cells}
+					<td class="matrix-total">
+						<div>${rowTotal}</div>
+						<div class="matrix-total-money">${formatMoney(rowMoneyVal, currencyCode)}</div>
+					</td>
+				</tr>
+			`;
+		})
+		.join('');
+
+	const footerCells = colKeys
+		.map((ck) => {
+			const packs = colPacks.get(ck) ?? 0;
+			const money = colMoney.get(ck) ?? 0;
+			return `<td class="matrix-col-total">
+				<div>${packs}</div>
+				<div class="matrix-total-money">${formatMoney(money, currencyCode)}</div>
+			</td>`;
+		})
+		.join('');
+
+	const table = `
+		<table class="print-matrix">
+			<thead>
+				<tr>
+					<th class="matrix-num">#</th>
+					<th class="matrix-client">${escapeHtml(t('label_customer_name'))}</th>
+					${thCols}
+					<th class="matrix-total">${escapeHtml(t('print_matrix_row_total'))}</th>
+				</tr>
+			</thead>
+			<tbody>${bodyRows}</tbody>
+			<tfoot>
+				<tr>
+					<td class="matrix-num"></td>
+					<td class="matrix-client matrix-col-total">${escapeHtml(t('print_matrix_col_total'))}</td>
+					${footerCells}
+					<td class="matrix-grand">
+						<div>${grandPacks}</div>
+						<div class="matrix-total-money">${formatMoney(grandMoney, currencyCode)}</div>
+					</td>
+				</tr>
+			</tfoot>
+		</table>
+	`;
+
+	const extraCss = `
+		<style>
+			table.print-matrix {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 10pt;
+				margin-top: 8px;
+			}
+			table.print-matrix thead th,
+			table.print-matrix tbody td,
+			table.print-matrix tfoot td {
+				border: 1px solid #999;
+				padding: 5px 7px;
+				text-align: center;
+				vertical-align: middle;
+			}
+			table.print-matrix thead th {
+				background: #e6e6e6;
+				font-weight: 700;
+				font-size: 9.5pt;
+			}
+			table.print-matrix th.matrix-sort {
+				min-width: 68px;
+				max-width: 100px;
+				word-break: break-word;
+				white-space: normal;
+				line-height: 1.2;
+			}
+			.matrix-sort-num {
+				display: inline-block;
+				min-width: 18px;
+				padding: 1px 4px;
+				border-radius: 50%;
+				background: #111;
+				color: #fff;
+				font-size: 8pt;
+				font-weight: 700;
+				margin-right: 4px;
+			}
+			.matrix-swatch {
+				display: inline-block;
+				width: 9px;
+				height: 9px;
+				border-radius: 50%;
+				margin-right: 3px;
+				border: 1px solid rgba(0,0,0,0.2);
+				vertical-align: middle;
+			}
+			.matrix-sort-name { font-size: 8.5pt; }
+			table.print-matrix th.matrix-client,
+			table.print-matrix td.matrix-client {
+				text-align: left;
+				font-weight: 600;
+				white-space: nowrap;
+				padding-left: 10px;
+			}
+			table.print-matrix td.matrix-num {
+				width: 28px;
+				color: #555;
+				font-weight: 600;
+			}
+			table.print-matrix td.matrix-cell { font-weight: 600; }
+			table.print-matrix td.matrix-empty { color: #bbb; }
+			table.print-matrix td.matrix-total,
+			table.print-matrix td.matrix-col-total,
+			table.print-matrix td.matrix-grand {
+				background: #f3f3f3;
+				font-weight: 700;
+			}
+			table.print-matrix td.matrix-grand {
+				background: #111;
+				color: #fff;
+			}
+			.matrix-total-money {
+				font-size: 8.5pt;
+				font-weight: 500;
+				color: #555;
+				margin-top: 2px;
+			}
+			table.print-matrix td.matrix-grand .matrix-total-money {
+				color: #eee;
+			}
+			table.print-matrix tbody tr:nth-child(even) td { background: #f9f9f9; }
+			table.print-matrix tbody tr:nth-child(even) td.matrix-total { background: #e8e8e8; }
+			@page { size: landscape; margin: 10mm; }
+		</style>
+	`;
+
+	const body = extraCss + header + table;
+	printViaIframe(t('print_matrix_title'), body);
 }

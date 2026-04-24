@@ -126,6 +126,57 @@ pub fn update_order_extended(
     )
 }
 
+/// Broad order update — customer details, deadline, notes, address, card color.
+/// Writes a CRDT event + audit entry so peers receive the change.
+#[tauri::command]
+pub fn update_order(
+    db: State<'_, Database>,
+    hlc: State<'_, HybridLogicalClock>,
+    payload: UpdateOrderPayload,
+) -> Result<(), String> {
+    let order_id = payload.order_id.clone();
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    crate::db::queries::update_order_full(&conn, &payload)?;
+    drop(conn);
+
+    // Event payload mirrors what we changed — receivers apply COALESCE
+    // semantics on their side. We intentionally ship the tri-state clear
+    // flags so nullification (e.g. color reset) replicates correctly.
+    let event_data = json!({
+        "customer_name":    payload.customer_name,
+        "customer_email":   payload.customer_email,
+        "customer_phone":   payload.customer_phone,
+        "customer_company": payload.customer_company,
+        "delivery_address": payload.delivery_address,
+        "delivery_notes":   payload.delivery_notes,
+        "deadline":         payload.deadline,
+        "notes":            payload.notes,
+        "card_color":       payload.card_color,
+        "clear_card_color": payload.clear_card_color,
+        "clear_deadline":   payload.clear_deadline,
+    });
+
+    store::append_event(
+        &db,
+        &hlc,
+        &order_id,
+        "order",
+        "OrderUpdated",
+        event_data.clone(),
+    )?;
+
+    if let Err(e) = store::append_audit_log(
+        &db,
+        "local",
+        "OrderUpdated",
+        json!({ "order_id": order_id, "fields": event_data }),
+    ) {
+        log::warn!("audit log write failed: {}", e);
+    }
+
+    Ok(())
+}
+
 /// Mark a deadline as confirmed (user acknowledged overdue status).
 #[tauri::command]
 pub fn confirm_order_deadline(

@@ -134,6 +134,11 @@ export interface Order {
 	pack_count_ordered: number;
 	pack_count_ready: number;
 	deadline_confirmed: boolean;
+	// Personalization (migration 016) — HEX color #rrggbb or undefined.
+	card_color?: string;
+	// Contact link (migration 017). Nullable — legacy orders stay unlinked.
+	contact_id?: string;
+	contact_location_id?: string;
 }
 
 export interface OrderItem {
@@ -155,6 +160,33 @@ export interface CreateOrderPayload {
 	customer_phone?: string;
 	deadline?: string;
 	notes?: string;
+	card_color?: string;
+	contact_id?: string;
+	contact_location_id?: string;
+}
+
+// Broad edit payload. Semantics:
+//   • Omit a field or pass undefined → keep existing value.
+//   • Pass a value                    → overwrite.
+//   • clear_card_color / clear_deadline = true → force NULL, wins over value.
+// The tri-state is needed so the UI can distinguish "don't touch" from
+// "explicitly reset to nothing".
+export interface UpdateOrderPayload {
+	order_id: string;
+	customer_name?: string;
+	customer_email?: string;
+	customer_phone?: string;
+	customer_company?: string;
+	delivery_address?: string;
+	delivery_notes?: string;
+	deadline?: string;
+	notes?: string;
+	card_color?: string;
+	contact_id?: string;
+	contact_location_id?: string;
+	clear_card_color?: boolean;
+	clear_deadline?: boolean;
+	clear_contact?: boolean;
 }
 
 export interface AddOrderItemPayload {
@@ -371,6 +403,19 @@ export interface OrderShortage {
 	shortage: number;
 }
 
+// Driven by `get_orders_waiting_for_sort` — active (pending|in_progress) orders
+// that reference a given flower sort, annotated with reserved vs. ordered packs.
+export interface OrderWaitingForSort {
+	order_id: string;
+	customer_name: string;
+	deadline?: string;
+	status: OrderStatus;
+	ordered_packs: number;
+	reserved_packs: number;
+	shortage: number;
+	created_at: string;
+}
+
 // ============================================================
 // App settings (migration 012)
 // ============================================================
@@ -391,4 +436,110 @@ export interface VersionInfo {
 	app_version: string;
 	db_schema_version: number;
 	min_compatible_version: string;
+}
+
+// ============================================================
+// Contacts (migration 017)
+// ============================================================
+
+// A contact is a customer record — independent of any single order. Linking
+// orders.contact_id to this row gives the operator history, total spent,
+// pinned addresses. `order_count` and `total_spent` are aggregates joined
+// in the read query, not stored columns.
+export interface Contact {
+	id: string;
+	name: string;
+	surname?: string;
+	email?: string;
+	phone?: string;
+	company?: string;
+	notes?: string;
+	photo_path?: string;
+	card_color?: string;
+	created_at: string;
+	updated_at: string;
+	order_count: number;
+	total_spent: number;
+	// Convenience shortcut: address of the contact's default location, or
+	// undefined if the contact has no locations yet. Filled by list_contacts
+	// and get_contact via correlated subquery.
+	default_address?: string;
+}
+
+// A contact can have multiple locations (home, office, warehouse...).
+// `is_default` — exactly one per contact; the backend resets the others
+// when a new default is set.
+export interface ContactLocation {
+	id: string;
+	contact_id: string;
+	label?: string;
+	address: string;
+	is_default: boolean;
+	created_at: string;
+}
+
+export interface CreateContactPayload {
+	name: string;
+	surname?: string;
+	email?: string;
+	phone?: string;
+	company?: string;
+	notes?: string;
+	card_color?: string;
+	// Optional single default address; when provided, a matching
+	// contact_locations row (is_default=1) is created in the same call.
+	default_address?: string;
+}
+
+export interface BackfillContactsResult {
+	created: number;
+	linked: number;
+}
+
+export interface UpdateContactPayload {
+	contact_id: string;
+	name?: string;
+	surname?: string;
+	email?: string;
+	phone?: string;
+	company?: string;
+	notes?: string;
+	card_color?: string;
+	clear_card_color?: boolean;
+}
+
+export interface CreateContactLocationPayload {
+	contact_id: string;
+	label?: string;
+	address: string;
+	is_default?: boolean;
+}
+
+export interface UpdateContactLocationPayload {
+	location_id: string;
+	label?: string;
+	address?: string;
+}
+
+// ============================================================
+// Backfill / data repair
+// ============================================================
+
+export type BackfillStatus = 'repaired' | 'ambiguous' | 'no_match';
+
+export interface BackfillOrderResult {
+	order_id: string;
+	customer_name: string;
+	status: BackfillStatus;
+	message: string;
+	packs_restored: number;
+	total_restored: number;
+}
+
+export interface BackfillReport {
+	total_legacy_orders: number;
+	repaired: number;
+	ambiguous: number;
+	no_match: number;
+	details: BackfillOrderResult[];
 }

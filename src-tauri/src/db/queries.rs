@@ -1,9 +1,11 @@
 use crate::events::types::{
     AddOrderItemPayload, AddTrustedNodePayload, AppSetting, AuditLog, AuditLogFilter, Category,
-    CreateCategoryPayload, CreateFlowerSortPayload, CreatePackAssignmentPayload, EventRecord,
-    FlowerConstants, FlowerSort, HarvestLogEntry, Item, Order, OrderItem, OrderShortage,
-    PackAssignment, PackageResult, PackagingLogEntry, PriceRecord, SyncPeer, TrustedNode,
-    UpdateCategoryPayload, UpdateFlowerSortPayload, CreateOrderPayload,
+    Contact, ContactLocation, CreateCategoryPayload, CreateContactLocationPayload,
+    CreateContactPayload, CreateFlowerSortPayload, CreatePackAssignmentPayload, CreateOrderPayload,
+    EventRecord, FlowerConstants, FlowerSort, HarvestLogEntry, Item, Order, OrderItem,
+    OrderShortage, OrderWaitingForSort, PackAssignment, PackageResult, PackagingLogEntry,
+    PriceRecord, SyncPeer, TrustedNode, UpdateCategoryPayload, UpdateContactLocationPayload,
+    UpdateContactPayload, UpdateFlowerSortPayload, UpdateOrderPayload,
 };
 use rusqlite::{params, Connection};
 
@@ -298,15 +300,19 @@ pub fn insert_order(
     payload: &CreateOrderPayload,
 ) -> Result<(), String> {
     conn.execute(
-        "INSERT INTO orders (id, customer_name, customer_email, customer_phone, deadline, notes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO orders (id, customer_name, customer_email, customer_phone, deadline, notes,
+                             card_color, contact_id, contact_location_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             id,
             payload.customer_name,
             payload.customer_email,
             payload.customer_phone,
             payload.deadline,
-            payload.notes
+            payload.notes,
+            payload.card_color,
+            payload.contact_id,
+            payload.contact_location_id,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -336,7 +342,8 @@ pub fn get_orders(
             "SELECT id, customer_name, customer_email, customer_phone, deadline, status,
                     total_amount, notes, created_at, updated_at,
                     customer_company, delivery_address, delivery_notes,
-                    pack_count_ordered, pack_count_ready, deadline_confirmed
+                    pack_count_ordered, pack_count_ready, deadline_confirmed, card_color,
+                    contact_id, contact_location_id
              FROM orders WHERE status = ?1 ORDER BY created_at DESC"
                 .to_string(),
             vec![Box::new(s.to_string()) as Box<dyn rusqlite::types::ToSql>],
@@ -345,7 +352,8 @@ pub fn get_orders(
             "SELECT id, customer_name, customer_email, customer_phone, deadline, status,
                     total_amount, notes, created_at, updated_at,
                     customer_company, delivery_address, delivery_notes,
-                    pack_count_ordered, pack_count_ready, deadline_confirmed
+                    pack_count_ordered, pack_count_ready, deadline_confirmed, card_color,
+                    contact_id, contact_location_id
              FROM orders ORDER BY created_at DESC"
                 .to_string(),
             vec![],
@@ -375,6 +383,9 @@ pub fn get_orders(
                 pack_count_ordered: row.get::<_, Option<i32>>(13)?.unwrap_or(0),
                 pack_count_ready: row.get::<_, Option<i32>>(14)?.unwrap_or(0),
                 deadline_confirmed: row.get::<_, Option<i32>>(15)?.unwrap_or(0) != 0,
+                card_color: row.get::<_, Option<String>>(16).ok().flatten(),
+                contact_id: row.get::<_, Option<String>>(17).ok().flatten(),
+                contact_location_id: row.get::<_, Option<String>>(18).ok().flatten(),
             })
         })
         .map_err(|e| e.to_string())?
@@ -389,7 +400,8 @@ pub fn get_order(conn: &Connection, order_id: &str) -> Result<Option<Order>, Str
         "SELECT id, customer_name, customer_email, customer_phone, deadline, status,
                 total_amount, notes, created_at, updated_at,
                 customer_company, delivery_address, delivery_notes,
-                pack_count_ordered, pack_count_ready, deadline_confirmed
+                pack_count_ordered, pack_count_ready, deadline_confirmed, card_color,
+                contact_id, contact_location_id
          FROM orders WHERE id = ?1",
         [order_id],
         |row| {
@@ -410,6 +422,9 @@ pub fn get_order(conn: &Connection, order_id: &str) -> Result<Option<Order>, Str
                 pack_count_ordered: row.get::<_, Option<i32>>(13)?.unwrap_or(0),
                 pack_count_ready: row.get::<_, Option<i32>>(14)?.unwrap_or(0),
                 deadline_confirmed: row.get::<_, Option<i32>>(15)?.unwrap_or(0) != 0,
+                card_color: row.get::<_, Option<String>>(16).ok().flatten(),
+                contact_id: row.get::<_, Option<String>>(17).ok().flatten(),
+                contact_location_id: row.get::<_, Option<String>>(18).ok().flatten(),
             })
         },
     );
@@ -1040,6 +1055,86 @@ pub fn update_order_extended(
     Ok(())
 }
 
+// ────────────────────────────────────────────────────────────────
+// Broad order update (migration 016 + ongoing edit UX).
+//
+// Semantics:
+//   • Option::None on any nullable field → keep existing value (COALESCE).
+//   • Option::Some(v)                    → overwrite with v.
+//   • clear_* = true                     → force NULL, overriding Some/None.
+//
+// customer_name is special: we only overwrite when Some AND non-empty —
+// the customer name is the one required field on an order and we never
+// want an edit to silently blank it. Blank strings from the form are
+// treated as "no change".
+// ────────────────────────────────────────────────────────────────
+pub fn update_order_full(
+    conn: &Connection,
+    payload: &UpdateOrderPayload,
+) -> Result<(), String> {
+    let customer_name_opt: Option<&str> = payload
+        .customer_name
+        .as_deref()
+        .filter(|s| !s.trim().is_empty());
+
+    let card_color_final: Option<String> = if payload.clear_card_color {
+        None
+    } else {
+        payload.card_color.clone()
+    };
+    let deadline_final: Option<String> = if payload.clear_deadline {
+        None
+    } else {
+        payload.deadline.clone()
+    };
+    let contact_id_final: Option<String> = if payload.clear_contact {
+        None
+    } else {
+        payload.contact_id.clone()
+    };
+    let contact_location_id_final: Option<String> = if payload.clear_contact {
+        None
+    } else {
+        payload.contact_location_id.clone()
+    };
+
+    conn.execute(
+        "UPDATE orders SET
+            customer_name        = COALESCE(?2, customer_name),
+            customer_email       = COALESCE(?3, customer_email),
+            customer_phone       = COALESCE(?4, customer_phone),
+            customer_company     = COALESCE(?5, customer_company),
+            delivery_address     = COALESCE(?6, delivery_address),
+            delivery_notes       = COALESCE(?7, delivery_notes),
+            notes                = COALESCE(?8, notes),
+            deadline             = CASE WHEN ?10 = 1 THEN NULL ELSE COALESCE(?9, deadline) END,
+            card_color           = CASE WHEN ?12 = 1 THEN NULL ELSE COALESCE(?11, card_color) END,
+            contact_id           = CASE WHEN ?14 = 1 THEN NULL ELSE COALESCE(?13, contact_id) END,
+            contact_location_id  = CASE WHEN ?14 = 1 THEN NULL ELSE COALESCE(?15, contact_location_id) END,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+         WHERE id = ?1",
+        params![
+            payload.order_id,                              // ?1
+            customer_name_opt,                             // ?2
+            payload.customer_email,                        // ?3
+            payload.customer_phone,                        // ?4
+            payload.customer_company,                      // ?5
+            payload.delivery_address,                      // ?6
+            payload.delivery_notes,                        // ?7
+            payload.notes,                                 // ?8
+            deadline_final,                                // ?9
+            if payload.clear_deadline { 1 } else { 0 },    // ?10
+            card_color_final,                              // ?11
+            if payload.clear_card_color { 1 } else { 0 },  // ?12
+            contact_id_final,                              // ?13
+            if payload.clear_contact { 1 } else { 0 },     // ?14
+            contact_location_id_final,                     // ?15
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn confirm_order_deadline(conn: &Connection, order_id: &str) -> Result<(), String> {
     conn.execute(
         "UPDATE orders SET deadline_confirmed = 1,
@@ -1057,7 +1152,8 @@ pub fn get_overdue_unconfirmed_orders(conn: &Connection) -> Result<Vec<Order>, S
             "SELECT id, customer_name, customer_email, customer_phone, deadline, status,
                     total_amount, notes, created_at, updated_at,
                     customer_company, delivery_address, delivery_notes,
-                    pack_count_ordered, pack_count_ready, deadline_confirmed
+                    pack_count_ordered, pack_count_ready, deadline_confirmed, card_color,
+                    contact_id, contact_location_id
              FROM orders
              WHERE deadline IS NOT NULL
                AND deadline < strftime('%Y-%m-%dT%H:%M:%f', 'now')
@@ -1086,6 +1182,9 @@ pub fn get_overdue_unconfirmed_orders(conn: &Connection) -> Result<Vec<Order>, S
                 pack_count_ordered: row.get::<_, Option<i32>>(13)?.unwrap_or(0),
                 pack_count_ready: row.get::<_, Option<i32>>(14)?.unwrap_or(0),
                 deadline_confirmed: row.get::<_, Option<i32>>(15)?.unwrap_or(0) != 0,
+                card_color: row.get::<_, Option<String>>(16).ok().flatten(),
+                contact_id: row.get::<_, Option<String>>(17).ok().flatten(),
+                contact_location_id: row.get::<_, Option<String>>(18).ok().flatten(),
             })
         })
         .map_err(|e| e.to_string())?
@@ -1486,6 +1585,72 @@ pub fn get_packaging_log_by_sort(
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
+/// Active orders that still need packs of a given sort. Drives the
+/// "Orders waiting for this sort" section on the greenhouse detail modal
+/// and the reserved-packs badge on flower cards.
+///
+/// An order qualifies when it is `pending` or `in_progress` AND at least one
+/// of its `order_items` references the requested `sort_id`. For each order
+/// we return:
+///   - `ordered_packs`  — sum of pack_count across that order's items for
+///     this sort (falls back to `quantity` for rows without pack_count, which
+///     can happen on non-flowers presets but is defensive here).
+///   - `reserved_packs` — sum of pack_assignments.pack_count for the same
+///     (sort, order) tuple, excluding rows already marked `delivered` so we
+///     only count stock that is reserved-but-still-on-hand.
+///   - `shortage`       — max(0, ordered - reserved).
+///
+/// Ordered by deadline ascending (nulls last, using created_at as fallback)
+/// so the operator sees the most urgent order first.
+pub fn get_orders_waiting_for_sort(
+    conn: &Connection,
+    sort_id: &str,
+) -> Result<Vec<OrderWaitingForSort>, String> {
+    let sql = "
+        SELECT o.id, o.customer_name, o.deadline, o.status, o.created_at,
+               (SELECT COALESCE(SUM(COALESCE(oi.pack_count, oi.quantity, 0)), 0)
+                FROM order_items oi
+                WHERE oi.order_id = o.id AND oi.sort_id = ?1) AS ordered_packs,
+               (SELECT COALESCE(SUM(pa.pack_count), 0)
+                FROM pack_assignments pa
+                WHERE pa.order_id = o.id
+                  AND pa.sort_id = ?1
+                  AND pa.status != 'delivered') AS reserved_packs
+        FROM orders o
+        WHERE o.status IN ('pending', 'in_progress')
+          AND EXISTS (
+              SELECT 1 FROM order_items oi
+              WHERE oi.order_id = o.id AND oi.sort_id = ?1
+          )
+        ORDER BY COALESCE(o.deadline, o.created_at) ASC
+    ";
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(params![sort_id], |row| {
+            let ordered_packs: i32 = row.get::<_, i64>(5)? as i32;
+            let reserved_packs: i32 = row.get::<_, i64>(6)? as i32;
+            let shortage = if ordered_packs > reserved_packs {
+                ordered_packs - reserved_packs
+            } else {
+                0
+            };
+            Ok(OrderWaitingForSort {
+                order_id: row.get(0)?,
+                customer_name: row.get(1)?,
+                deadline: row.get(2)?,
+                status: row.get(3)?,
+                created_at: row.get(4)?,
+                ordered_packs,
+                reserved_packs,
+                shortage,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
 /// Packaging entries linked to a specific order. Returned chronologically
 /// (oldest first) because the print layout reads top-to-bottom along the
 /// warehouse→order chain. Includes unlinked log rows? No — strict filter.
@@ -1722,4 +1887,516 @@ pub fn delete_pack_assignment(conn: &Connection, id: &str) -> Result<(), String>
     conn.execute("DELETE FROM pack_assignments WHERE id = ?1", [id])
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ============================================================
+// Contacts (migration 017) — Phase E
+// ============================================================
+
+fn row_to_contact(row: &rusqlite::Row<'_>) -> rusqlite::Result<Contact> {
+    Ok(Contact {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        surname: row.get(2)?,
+        email: row.get(3)?,
+        phone: row.get(4)?,
+        company: row.get(5)?,
+        notes: row.get(6)?,
+        photo_path: row.get(7)?,
+        card_color: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+        order_count: row.get::<_, Option<i64>>(11)?.unwrap_or(0),
+        total_spent: row.get::<_, Option<f64>>(12)?.unwrap_or(0.0),
+        default_address: row.get::<_, Option<String>>(13).ok().flatten(),
+    })
+}
+
+/// List contacts (optionally filtered by case-insensitive substring on
+/// name/surname/email/phone/company). Aggregates (order_count, total_spent)
+/// are computed by LEFT JOIN on orders — a contact with zero orders returns
+/// 0/0.0. The default address is pulled via a correlated subquery so the
+/// row-set stays one row per contact.
+pub fn list_contacts(
+    conn: &Connection,
+    search: Option<&str>,
+) -> Result<Vec<Contact>, String> {
+    let base_sql = "
+        SELECT c.id, c.name, c.surname, c.email, c.phone, c.company,
+               c.notes, c.photo_path, c.card_color, c.created_at, c.updated_at,
+               COALESCE(agg.order_count, 0)   AS order_count,
+               COALESCE(agg.total_spent, 0.0) AS total_spent,
+               (SELECT address FROM contact_locations
+                 WHERE contact_id = c.id AND is_default = 1
+                 LIMIT 1)                      AS default_address
+          FROM contacts c
+          LEFT JOIN (
+              SELECT contact_id,
+                     COUNT(*)              AS order_count,
+                     COALESCE(SUM(total_amount), 0.0) AS total_spent
+                FROM orders
+               WHERE contact_id IS NOT NULL
+               GROUP BY contact_id
+          ) agg ON agg.contact_id = c.id
+    ";
+
+    let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match search {
+        Some(q) if !q.trim().is_empty() => {
+            let pattern = format!("%{}%", q.trim());
+            (
+                format!(
+                    "{base_sql}
+                     WHERE c.name     LIKE ?1 COLLATE NOCASE
+                        OR c.surname  LIKE ?1 COLLATE NOCASE
+                        OR c.email    LIKE ?1 COLLATE NOCASE
+                        OR c.phone    LIKE ?1 COLLATE NOCASE
+                        OR c.company  LIKE ?1 COLLATE NOCASE
+                     ORDER BY c.name COLLATE NOCASE ASC"
+                ),
+                vec![Box::new(pattern) as Box<dyn rusqlite::types::ToSql>],
+            )
+        }
+        _ => (
+            format!("{base_sql} ORDER BY c.name COLLATE NOCASE ASC"),
+            vec![],
+        ),
+    };
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|p| p.as_ref()).collect();
+
+    let rows = stmt
+        .query_map(params_refs.as_slice(), row_to_contact)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(rows)
+}
+
+pub fn get_contact(conn: &Connection, contact_id: &str) -> Result<Option<Contact>, String> {
+    let sql = "
+        SELECT c.id, c.name, c.surname, c.email, c.phone, c.company,
+               c.notes, c.photo_path, c.card_color, c.created_at, c.updated_at,
+               COALESCE(agg.order_count, 0),
+               COALESCE(agg.total_spent, 0.0),
+               (SELECT address FROM contact_locations
+                 WHERE contact_id = c.id AND is_default = 1
+                 LIMIT 1)
+          FROM contacts c
+          LEFT JOIN (
+              SELECT contact_id,
+                     COUNT(*) AS order_count,
+                     COALESCE(SUM(total_amount), 0.0) AS total_spent
+                FROM orders
+               WHERE contact_id IS NOT NULL
+               GROUP BY contact_id
+          ) agg ON agg.contact_id = c.id
+         WHERE c.id = ?1
+    ";
+
+    let result = conn.query_row(sql, [contact_id], row_to_contact);
+    match result {
+        Ok(c) => Ok(Some(c)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub fn insert_contact(
+    conn: &Connection,
+    id: &str,
+    payload: &CreateContactPayload,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO contacts (id, name, surname, email, phone, company, notes, card_color)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            id,
+            payload.name,
+            payload.surname,
+            payload.email,
+            payload.phone,
+            payload.company,
+            payload.notes,
+            payload.card_color,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Seed optional default address so quick-create from the picker can
+    // produce a fully-populated contact in one call.
+    if let Some(addr) = payload.default_address.as_deref() {
+        let addr_trim = addr.trim();
+        if !addr_trim.is_empty() {
+            let loc_id = uuid::Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO contact_locations (id, contact_id, label, address, is_default)
+                 VALUES (?1, ?2, NULL, ?3, 1)",
+                params![loc_id, id, addr_trim],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn update_contact(
+    conn: &Connection,
+    payload: &UpdateContactPayload,
+) -> Result<(), String> {
+    let name_opt: Option<&str> = payload
+        .name
+        .as_deref()
+        .filter(|s| !s.trim().is_empty());
+
+    let card_color_final: Option<String> = if payload.clear_card_color {
+        None
+    } else {
+        payload.card_color.clone()
+    };
+
+    conn.execute(
+        "UPDATE contacts SET
+            name       = COALESCE(?2, name),
+            surname    = COALESCE(?3, surname),
+            email      = COALESCE(?4, email),
+            phone      = COALESCE(?5, phone),
+            company    = COALESCE(?6, company),
+            notes      = COALESCE(?7, notes),
+            card_color = CASE WHEN ?9 = 1 THEN NULL ELSE COALESCE(?8, card_color) END,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+         WHERE id = ?1",
+        params![
+            payload.contact_id,
+            name_opt,
+            payload.surname,
+            payload.email,
+            payload.phone,
+            payload.company,
+            payload.notes,
+            card_color_final,
+            if payload.clear_card_color { 1 } else { 0 },
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Delete a contact. orders.contact_id is detached (set to NULL) so the
+/// order history remains intact — deleting a client in the UI should not
+/// nuke their past orders' totals.
+pub fn delete_contact(conn: &Connection, contact_id: &str) -> Result<(), String> {
+    conn.execute(
+        "UPDATE orders SET contact_id = NULL, contact_location_id = NULL WHERE contact_id = ?1",
+        [contact_id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM contacts WHERE id = ?1", [contact_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn set_contact_photo_path(
+    conn: &Connection,
+    contact_id: &str,
+    path: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE contacts SET photo_path = ?1,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+         WHERE id = ?2",
+        params![path, contact_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ── Locations ─────────────────────────────────────────────────
+
+fn row_to_location(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContactLocation> {
+    Ok(ContactLocation {
+        id: row.get(0)?,
+        contact_id: row.get(1)?,
+        label: row.get(2)?,
+        address: row.get(3)?,
+        is_default: row.get::<_, i64>(4)? != 0,
+        created_at: row.get(5)?,
+    })
+}
+
+pub fn list_contact_locations(
+    conn: &Connection,
+    contact_id: &str,
+) -> Result<Vec<ContactLocation>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, contact_id, label, address, is_default, created_at
+               FROM contact_locations
+              WHERE contact_id = ?1
+              ORDER BY is_default DESC, created_at ASC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([contact_id], row_to_location)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(rows)
+}
+
+pub fn insert_contact_location(
+    conn: &Connection,
+    id: &str,
+    payload: &CreateContactLocationPayload,
+) -> Result<(), String> {
+    // If this is the first location OR caller asked for default, atomically
+    // demote any existing default and flag the new one.
+    let mut flag_default = payload.is_default;
+    if !flag_default {
+        let existing: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM contact_locations WHERE contact_id = ?1",
+                [&payload.contact_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if existing == 0 {
+            flag_default = true;
+        }
+    }
+
+    if flag_default {
+        conn.execute(
+            "UPDATE contact_locations SET is_default = 0 WHERE contact_id = ?1",
+            [&payload.contact_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    conn.execute(
+        "INSERT INTO contact_locations (id, contact_id, label, address, is_default)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            id,
+            payload.contact_id,
+            payload.label,
+            payload.address,
+            if flag_default { 1 } else { 0 },
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+pub fn update_contact_location(
+    conn: &Connection,
+    payload: &UpdateContactLocationPayload,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE contact_locations SET
+            label   = COALESCE(?2, label),
+            address = COALESCE(?3, address)
+         WHERE id = ?1",
+        params![payload.location_id, payload.label, payload.address],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn delete_contact_location(conn: &Connection, location_id: &str) -> Result<(), String> {
+    // Forget the reference from any orders that pointed here (rare — but
+    // keeps us consistent if a user deletes a location already attached to
+    // a shipped order).
+    conn.execute(
+        "UPDATE orders SET contact_location_id = NULL WHERE contact_location_id = ?1",
+        [location_id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM contact_locations WHERE id = ?1", [location_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Atomically promote `location_id` to default for its contact. Any sibling
+/// rows for the same contact are demoted.
+pub fn set_default_contact_location(
+    conn: &Connection,
+    location_id: &str,
+) -> Result<(), String> {
+    let contact_id: Option<String> = conn
+        .query_row(
+            "SELECT contact_id FROM contact_locations WHERE id = ?1",
+            [location_id],
+            |row| row.get(0),
+        )
+        .ok();
+
+    let Some(contact_id) = contact_id else {
+        return Err("Location not found".to_string());
+    };
+
+    conn.execute(
+        "UPDATE contact_locations SET is_default = 0 WHERE contact_id = ?1",
+        [&contact_id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE contact_locations SET is_default = 1 WHERE id = ?1",
+        [location_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Orders belonging to a specific contact. Reuses the full Order SELECT
+/// shape so the frontend can render with the same card/row components.
+pub fn get_orders_for_contact(
+    conn: &Connection,
+    contact_id: &str,
+) -> Result<Vec<Order>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, customer_name, customer_email, customer_phone, deadline, status,
+                    total_amount, notes, created_at, updated_at,
+                    customer_company, delivery_address, delivery_notes,
+                    pack_count_ordered, pack_count_ready, deadline_confirmed, card_color,
+                    contact_id, contact_location_id
+               FROM orders
+              WHERE contact_id = ?1
+              ORDER BY created_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let orders = stmt
+        .query_map([contact_id], |row| {
+            Ok(Order {
+                id: row.get(0)?,
+                customer_name: row.get(1)?,
+                customer_email: row.get(2)?,
+                customer_phone: row.get(3)?,
+                deadline: row.get(4)?,
+                status: row.get(5)?,
+                total_amount: row.get(6)?,
+                notes: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                customer_company: row.get(10)?,
+                delivery_address: row.get(11)?,
+                delivery_notes: row.get(12)?,
+                pack_count_ordered: row.get::<_, Option<i32>>(13)?.unwrap_or(0),
+                pack_count_ready: row.get::<_, Option<i32>>(14)?.unwrap_or(0),
+                deadline_confirmed: row.get::<_, Option<i32>>(15)?.unwrap_or(0) != 0,
+                card_color: row.get::<_, Option<String>>(16).ok().flatten(),
+                contact_id: row.get::<_, Option<String>>(17).ok().flatten(),
+                contact_location_id: row.get::<_, Option<String>>(18).ok().flatten(),
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(orders)
+}
+
+/// Backfill helper: groups existing orders by normalized customer_name and
+/// creates a Contact per unique name. Each created contact is then linked
+/// back to every order that matches its canonical name (case-insensitive
+/// trim). Idempotent — orders already linked are skipped.
+///
+/// Returns (created_contacts, linked_orders).
+pub fn backfill_contacts_from_orders(conn: &Connection) -> Result<(i64, i64), String> {
+    // Canonical name → existing contact id (if any). We use the lowercased
+    // trimmed name as the dedupe key.
+    let mut stmt = conn
+        .prepare(
+            "SELECT TRIM(LOWER(customer_name)) AS key, customer_name,
+                    MIN(customer_email)  AS email,
+                    MIN(customer_phone)  AS phone,
+                    MIN(delivery_address) AS addr
+               FROM orders
+              WHERE contact_id IS NULL
+                AND customer_name IS NOT NULL
+                AND TRIM(customer_name) <> ''
+              GROUP BY key",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let groups: Vec<(String, String, Option<String>, Option<String>, Option<String>)> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let mut created = 0i64;
+    let mut linked = 0i64;
+
+    for (key, display_name, email, phone, addr) in groups {
+        // See if a contact with the same canonical name already exists.
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT id FROM contacts
+                  WHERE TRIM(LOWER(name)) = ?1
+                  LIMIT 1",
+                [&key],
+                |row| row.get(0),
+            )
+            .ok();
+
+        let contact_id = match existing {
+            Some(id) => id,
+            None => {
+                let new_id = uuid::Uuid::new_v4().to_string();
+                conn.execute(
+                    "INSERT INTO contacts (id, name, email, phone)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![new_id, display_name, email, phone],
+                )
+                .map_err(|e| e.to_string())?;
+
+                // Seed an address if any matched order had one.
+                if let Some(a) = addr.as_deref() {
+                    let a_trim = a.trim();
+                    if !a_trim.is_empty() {
+                        let loc_id = uuid::Uuid::new_v4().to_string();
+                        conn.execute(
+                            "INSERT INTO contact_locations
+                                 (id, contact_id, label, address, is_default)
+                             VALUES (?1, ?2, NULL, ?3, 1)",
+                            params![loc_id, new_id, a_trim],
+                        )
+                        .map_err(|e| e.to_string())?;
+                    }
+                }
+                created += 1;
+                new_id
+            }
+        };
+
+        // Link every matching, still-unlinked order to this contact.
+        let rows = conn
+            .execute(
+                "UPDATE orders SET contact_id = ?1
+                  WHERE contact_id IS NULL
+                    AND TRIM(LOWER(customer_name)) = ?2",
+                params![contact_id, key],
+            )
+            .map_err(|e| e.to_string())?;
+        linked += rows as i64;
+    }
+
+    Ok((created, linked))
 }

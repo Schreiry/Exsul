@@ -1,6 +1,7 @@
 <script lang="ts">
 	import FlowerCard from '$lib/components/greenhouse/FlowerCard.svelte';
 	import { flowerConstants } from '$lib/stores/flowers';
+	import { t } from '$lib/stores/i18n';
 	import type { FlowerSort } from '$lib/tauri/types';
 
 	interface Props {
@@ -21,6 +22,8 @@
 	let selectedSort = $state<FlowerSort | null>(null);
 	let quantity = $state(1);
 	let searchQuery = $state('');
+	// Manual override for price-per-pack; null = use auto (sort.sell_price_stem * fpp)
+	let pricePerPackOverride = $state<number | null>(null);
 
 	// Only show sorts with available stock
 	const availableSorts = $derived(
@@ -35,17 +38,23 @@
 	const stemsPerPack = $derived(
 		selectedSort?.flowers_per_pack_override ?? $flowerConstants.flowers_per_pack
 	);
-	// Price for ONE PACK (not per stem)
 	const pricePerStem = $derived(selectedSort?.sell_price_stem ?? 0);
-	const pricePerPack = $derived(pricePerStem * stemsPerPack);
+	// Auto price for ONE PACK; respected when no manual override
+	const autoPricePerPack = $derived(pricePerStem * stemsPerPack);
+	const pricePerPack = $derived(
+		pricePerPackOverride !== null ? pricePerPackOverride : autoPricePerPack
+	);
 	const totalPrice = $derived(quantity * pricePerPack);
 	const maxQty = $derived(selectedSort?.pkg_stock ?? 0);
 	const isOverStock = $derived(quantity > maxQty);
-	const hasPriceWarning = $derived(!!selectedSort && pricePerStem === 0);
+	// Show the zero-price hint only when both auto AND override resolve to 0 —
+	// once the user types a price, the warning becomes noise.
+	const hasPriceWarning = $derived(!!selectedSort && pricePerPack === 0);
 
 	function handleSelect(sort: FlowerSort) {
 		selectedSort = sort;
 		quantity = 1;
+		pricePerPackOverride = null;
 	}
 
 	function handleConfirm() {
@@ -123,9 +132,34 @@
 							<button type="button" class="qty-btn" onclick={() => { if (quantity < maxQty) quantity++; }}>+</button>
 						</div>
 
+						<label class="price-label" for="add-item-price-per-pack">{$t('label_price_per_pack')}:</label>
+						<div class="price-input-wrap">
+							<input
+								id="add-item-price-per-pack"
+								class="price-input"
+								type="number"
+								min="0"
+								step="0.01"
+								value={pricePerPack}
+								oninput={(e) => {
+									const v = (e.currentTarget as HTMLInputElement).value;
+									pricePerPackOverride = v === '' ? null : Number(v);
+								}}
+							/>
+							{#if pricePerPackOverride !== null && pricePerPackOverride !== autoPricePerPack}
+								<button
+									type="button"
+									class="price-reset"
+									title={$t('action_reset_to_auto')}
+									aria-label={$t('action_reset_to_auto')}
+									onclick={() => (pricePerPackOverride = null)}
+								>↺</button>
+							{/if}
+						</div>
+
 						<div class="price-info">
 							<span class="price-breakdown">
-								{pricePerStem.toFixed(2)}/шт. × {stemsPerPack} шт. = {pricePerPack.toFixed(2)}/уп.
+								{pricePerStem.toFixed(2)}/шт. × {stemsPerPack} шт. = {autoPricePerPack.toFixed(2)}/уп.
 							</span>
 							<span class="price-total">= {totalPrice.toFixed(2)}</span>
 						</div>
@@ -142,7 +176,7 @@
 
 					{#if hasPriceWarning}
 						<div class="price-warning">
-							<span>&#9888;</span> Цена за стебель не указана — итого будет 0
+							<span>&#9888;</span> Цена не указана — итого будет 0
 						</div>
 					{/if}
 
@@ -351,6 +385,54 @@
 	.qty-input::-webkit-outer-spin-button,
 	.qty-input::-webkit-inner-spin-button { -webkit-appearance: none; }
 	.qty-input.qty-err { color: var(--color-alert-red, #ef4444); }
+
+	.price-label {
+		font-size: 0.8rem;
+		color: var(--color-outline);
+		font-weight: 500;
+	}
+
+	.price-input-wrap {
+		position: relative;
+		display: flex;
+		align-items: center;
+		width: 96px;
+	}
+
+	.price-input {
+		width: 100%;
+		background: var(--color-surface-container-high);
+		border: 1px solid var(--color-outline-variant);
+		border-radius: 8px;
+		padding: 6px 28px 6px 10px;
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: var(--color-on-surface);
+		font-family: inherit;
+		outline: none;
+		text-align: right;
+		transition: border-color 0.15s;
+	}
+	.price-input:focus { border-color: var(--color-primary); }
+	.price-input::-webkit-outer-spin-button,
+	.price-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+	.price-reset {
+		position: absolute;
+		right: 4px;
+		background: none;
+		border: none;
+		color: var(--color-outline);
+		cursor: pointer;
+		padding: 2px 6px;
+		border-radius: 6px;
+		font-size: 0.95rem;
+		line-height: 1;
+	}
+	.price-reset:hover {
+		color: var(--color-primary);
+		background: var(--color-surface-container);
+	}
 
 	.price-info {
 		display: flex;

@@ -7,6 +7,8 @@ import type {
 	AppSetting,
 	AuditLog,
 	AuditLogFilter,
+	BackfillContactsResult,
+	BackfillReport,
 	Category,
 	ChangePricePayload,
 	CreateCategoryPayload,
@@ -14,6 +16,13 @@ import type {
 	CreateItemPayload,
 	CreateOrderPayload,
 	CreatePackAssignmentPayload,
+	UpdateOrderPayload,
+	Contact,
+	ContactLocation,
+	CreateContactPayload,
+	UpdateContactPayload,
+	CreateContactLocationPayload,
+	UpdateContactLocationPayload,
 	EventRecord,
 	FlowerConstants,
 	FlowerSort,
@@ -22,6 +31,7 @@ import type {
 	Order,
 	OrderItem,
 	OrderShortage,
+	OrderWaitingForSort,
 	PackAssignment,
 	PackageResult,
 	PackagingLogEntry,
@@ -293,6 +303,8 @@ export const commands = {
 		safeInvoke<string | null>('get_earliest_order_date'),
 	deleteOrder: (orderId: string) => safeInvoke<void>('delete_order', { orderId }),
 	deleteAllOrders: () => safeInvoke<number>('delete_all_orders'),
+	updateOrder: (payload: UpdateOrderPayload) =>
+		safeInvoke<void>('update_order', { payload }),
 
 	// Audit
 	getAuditLogs: (filter?: AuditLogFilter) =>
@@ -333,6 +345,8 @@ export const commands = {
 		safeInvoke<PackagingLogEntry[]>('get_packaging_log_by_sort', { sortId, limit }),
 	getPackagingLogByOrder: (orderId: string) =>
 		safeInvoke<PackagingLogEntry[]>('get_packaging_log_by_order', { orderId }),
+	getOrdersWaitingForSort: (sortId: string) =>
+		safeInvoke<OrderWaitingForSort[]>('get_orders_waiting_for_sort', { sortId }),
 	deletePackagingEntry: (id: string) =>
 		safeInvoke<void>('delete_packaging_entry', { id }),
 	deleteAllPackaging: () => safeInvoke<number>('delete_all_packaging'),
@@ -400,4 +414,37 @@ export const commands = {
 	setSetting: (key: string, value: string) =>
 		safeInvoke<void>('set_setting', { key, value }),
 	getAllSettings: () => safeInvoke<AppSetting[]>('get_all_settings'),
+
+	// Backfill / data repair
+	backfillLegacyOrders: () =>
+		safeInvoke<BackfillReport>('backfill_legacy_orders'),
+	backfillContactsFromOrders: () =>
+		safeInvoke<BackfillContactsResult>('backfill_contacts_from_orders'),
+
+	// ── Contacts (Phase E) ─────────────────────────────────────
+	// Flowers-mode only; TS callers gate on $preset === 'flowers'
+	createContact: (payload: CreateContactPayload) =>
+		safeInvoke<string>('create_contact', { payload }),
+	updateContact: (payload: UpdateContactPayload) =>
+		safeInvoke<void>('update_contact', { payload }),
+	deleteContact: (contactId: string) =>
+		safeInvoke<void>('delete_contact', { contactId }),
+	getContacts: (search?: string) =>
+		safeInvoke<Contact[]>('get_contacts', { search }),
+	getContact: (contactId: string) =>
+		safeInvoke<Contact | null>('get_contact', { contactId }),
+	getOrdersForContact: (contactId: string) =>
+		safeInvoke<Order[]>('get_orders_for_contact', { contactId }),
+	addContactLocation: (payload: CreateContactLocationPayload) =>
+		safeInvoke<string>('add_contact_location', { payload }),
+	updateContactLocation: (payload: UpdateContactLocationPayload) =>
+		safeInvoke<void>('update_contact_location', { payload }),
+	deleteContactLocation: (locationId: string) =>
+		safeInvoke<void>('delete_contact_location', { locationId }),
+	setDefaultContactLocation: (locationId: string) =>
+		safeInvoke<void>('set_default_contact_location', { locationId }),
+	getContactLocations: (contactId: string) =>
+		safeInvoke<ContactLocation[]>('get_contact_locations', { contactId }),
+	saveContactPhoto: (contactId: string, sourcePath: string) =>
+		safeInvoke<string>('save_contact_photo', { contactId, sourcePath }),
 } as const;
