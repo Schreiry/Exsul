@@ -1375,6 +1375,59 @@ export async function printContactsMatrix(
 		</table>
 	`;
 
+	// Debit/credit invariant: the user explicitly asked for an Excel-style
+	// cross-check — sum across clients (rows) must equal sum across sorts
+	// (columns) must equal the grand total. Money values can drift by sub-cent
+	// rounding, so compare with a 0.005 tolerance; pack counts are integers
+	// and must match exactly.
+	const sumRowPacks = Array.from(rowPacks.values()).reduce((a, b) => a + b, 0);
+	const sumColPacks = Array.from(colPacks.values()).reduce((a, b) => a + b, 0);
+	const sumRowMoney = Array.from(rowMoney.values()).reduce((a, b) => a + b, 0);
+	const sumColMoney = Array.from(colMoney.values()).reduce((a, b) => a + b, 0);
+	const packsMatch = sumRowPacks === sumColPacks && sumColPacks === grandPacks;
+	const moneyMatch =
+		Math.abs(sumRowMoney - sumColMoney) < 0.005 &&
+		Math.abs(sumColMoney - grandMoney) < 0.005;
+	const allMatch = packsMatch && moneyMatch;
+	const checkBadge = allMatch
+		? `<span class="matrix-check-ok">${escapeHtml(t('print_matrix_check_ok'))}</span>`
+		: `<span class="matrix-check-bad">${escapeHtml(t('print_matrix_check_mismatch'))}</span>`;
+
+	const checkPanel = `
+		<div class="matrix-check">
+			<div class="matrix-check-title">
+				<strong>${escapeHtml(t('print_matrix_check_title'))}</strong>
+				${checkBadge}
+			</div>
+			<table class="matrix-check-table">
+				<thead>
+					<tr>
+						<th></th>
+						<th>${escapeHtml(t('label_pack_count'))}</th>
+						<th>${escapeHtml(t('print_summary'))}</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td>${escapeHtml(t('print_matrix_check_rows'))}</td>
+						<td>${sumRowPacks}</td>
+						<td>${formatMoney(sumRowMoney, currencyCode)}</td>
+					</tr>
+					<tr>
+						<td>${escapeHtml(t('print_matrix_check_cols'))}</td>
+						<td>${sumColPacks}</td>
+						<td>${formatMoney(sumColMoney, currencyCode)}</td>
+					</tr>
+					<tr class="matrix-check-grand">
+						<td>${escapeHtml(t('print_matrix_check_grand'))}</td>
+						<td>${grandPacks}</td>
+						<td>${formatMoney(grandMoney, currencyCode)}</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+	`;
+
 	const extraCss = `
 		<style>
 			table.print-matrix {
@@ -1464,10 +1517,66 @@ export async function printContactsMatrix(
 			}
 			table.print-matrix tbody tr:nth-child(even) td { background: #f9f9f9; }
 			table.print-matrix tbody tr:nth-child(even) td.matrix-total { background: #e8e8e8; }
+			.matrix-check {
+				margin-top: 14px;
+				padding: 10px 14px;
+				border: 1.5px solid #333;
+				border-radius: 6px;
+				background: #fafafa;
+				page-break-inside: avoid;
+				max-width: 520px;
+			}
+			.matrix-check-title {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				margin-bottom: 6px;
+				font-size: 12pt;
+			}
+			.matrix-check-ok {
+				color: #0a6e3a;
+				background: #d8f0e1;
+				padding: 2px 9px;
+				border-radius: 4px;
+				font-size: 11pt;
+				font-weight: 700;
+			}
+			.matrix-check-bad {
+				color: #8a1a1a;
+				background: #fbdcdc;
+				padding: 2px 9px;
+				border-radius: 4px;
+				font-size: 11pt;
+				font-weight: 700;
+			}
+			table.matrix-check-table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 11pt;
+			}
+			table.matrix-check-table th,
+			table.matrix-check-table td {
+				border: 1px solid #bbb;
+				padding: 4px 8px;
+				text-align: right;
+			}
+			table.matrix-check-table th {
+				background: #ececec;
+				font-weight: 600;
+			}
+			table.matrix-check-table td:first-child,
+			table.matrix-check-table th:first-child {
+				text-align: left;
+			}
+			table.matrix-check-table tr.matrix-check-grand td {
+				background: #111;
+				color: #fff;
+				font-weight: 700;
+			}
 			@page { size: landscape; margin: 10mm; }
 		</style>
 	`;
 
-	const body = extraCss + header + table;
+	const body = extraCss + header + table + checkPanel;
 	printViaIframe(t('print_matrix_title'), body);
 }

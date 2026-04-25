@@ -77,17 +77,19 @@
 		}
 	}
 
-	// Communicate dock dimensions to root so app-main can compensate
+	// Communicate dock dimensions to root so app-main can compensate.
+	// Values are clamps; the dock itself scales with --ui-scale, so we use
+	// calc() so the clearance grows in lockstep when the user dials up zoom.
 	$effect(() => {
 		const root = document.documentElement;
 		if (effectiveDevice === 'tablet-landscape') {
 			root.style.setProperty('--dock-bottom-clearance', '0px');
-			root.style.setProperty('--dock-side-clearance', '76px');
+			root.style.setProperty('--dock-side-clearance', 'calc(82px * var(--ui-scale, 1))');
 		} else if (effectiveDevice === 'mobile-portrait') {
-			root.style.setProperty('--dock-bottom-clearance', '72px');
+			root.style.setProperty('--dock-bottom-clearance', 'calc(78px * var(--ui-scale, 1))');
 			root.style.setProperty('--dock-side-clearance', '0px');
 		} else {
-			root.style.setProperty('--dock-bottom-clearance', '96px');
+			root.style.setProperty('--dock-bottom-clearance', 'calc(102px * var(--ui-scale, 1))');
 			root.style.setProperty('--dock-side-clearance', '0px');
 		}
 	});
@@ -168,30 +170,47 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 4px;
-		padding: 8px 12px;
+		gap: calc(5px * var(--ui-scale, 1));
+		padding: calc(9px * var(--ui-scale, 1)) calc(14px * var(--ui-scale, 1));
 		position: relative;
 		overflow: hidden;
 
-		/* Layered glass background */
+		/* Layered glass background — more transparent so user wallpaper
+		   shows through. The internal sheen layer adds the "reflection"
+		   highlight along the top edge. */
 		background:
-			linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%),
-			var(--dock-bg, rgba(18, 18, 18, 0.82));
+			linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 38%, rgba(255, 255, 255, 0.00) 100%),
+			linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%),
+			var(--dock-bg, rgba(18, 18, 18, 0.62));
 
-		/* Enhanced blur + saturation for depth */
-		backdrop-filter: blur(32px) saturate(1.8) brightness(1.04);
-		-webkit-backdrop-filter: blur(32px) saturate(1.8) brightness(1.04);
+		/* Stronger blur + saturation so glass reads against any wallpaper */
+		backdrop-filter: blur(40px) saturate(2) brightness(1.05);
+		-webkit-backdrop-filter: blur(40px) saturate(2) brightness(1.05);
 
 		border: 1px solid var(--dock-border, rgba(255, 255, 255, 0.10));
-		border-top-color: rgba(255, 255, 255, 0.18);
+		border-top-color: rgba(255, 255, 255, 0.28);
 
 		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.12),
-			0 8px 32px rgba(0, 0, 0, 0.35),
-			0 2px 8px rgba(0, 0, 0, 0.20);
+			inset 0 1px 0 rgba(255, 255, 255, 0.20),
+			inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+			0 14px 44px rgba(0, 0, 0, 0.42),
+			0 4px 12px rgba(0, 0, 0, 0.28);
 
 		z-index: 1000;
 		transition: box-shadow 0.3s var(--ease-spring, ease);
+	}
+
+	/* Sharp specular highlight along the top edge — reads as a glass
+	   reflection rather than a flat tint. Sits above the spotlight ::before
+	   so it's always visible. */
+	.dock-bar::after {
+		content: '';
+		position: absolute;
+		inset: 0 8% auto 8%;
+		height: 1px;
+		background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.55) 50%, transparent 100%);
+		pointer-events: none;
+		opacity: 0.85;
 	}
 
 	/* Cursor-reactive spotlight overlay */
@@ -243,20 +262,21 @@
 		transform: translateY(-50%);
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
-		padding: 12px 8px;
+		gap: calc(5px * var(--ui-scale, 1));
+		padding: calc(13px * var(--ui-scale, 1)) calc(9px * var(--ui-scale, 1));
 		background:
-			linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 100%),
-			var(--dock-bg, rgba(18, 18, 18, 0.82));
-		backdrop-filter: blur(32px) saturate(1.8) brightness(1.04);
-		-webkit-backdrop-filter: blur(32px) saturate(1.8) brightness(1.04);
+			linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.03) 60%, rgba(255, 255, 255, 0.00) 100%),
+			var(--dock-bg, rgba(18, 18, 18, 0.62));
+		backdrop-filter: blur(40px) saturate(2) brightness(1.05);
+		-webkit-backdrop-filter: blur(40px) saturate(2) brightness(1.05);
 		border: 1px solid var(--dock-border, rgba(255, 255, 255, 0.10));
-		border-top-color: rgba(255, 255, 255, 0.18);
+		border-top-color: rgba(255, 255, 255, 0.28);
 		border-radius: 20px;
 		z-index: 1000;
 		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.12),
-			0 8px 32px rgba(0, 0, 0, 0.35);
+			inset 0 1px 0 rgba(255, 255, 255, 0.20),
+			inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+			0 14px 44px rgba(0, 0, 0, 0.42);
 	}
 
 	.dock-rail-left  { left: 12px; }

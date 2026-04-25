@@ -4,7 +4,7 @@
 	import SyncIndicator from '$lib/components/sync/SyncIndicator.svelte';
 	import type { DockItemConfig } from '$lib/components/dock/types';
 	import { applyTheme } from '$lib/theme/apply';
-	import { seedColor, colorMode, paletteMode } from '$lib/stores/theme';
+	import { seedColor, colorMode, paletteMode, backgroundImage, backgroundOverlay } from '$lib/stores/theme';
 	import { inventory } from '$lib/stores/inventory';
 	import { categories } from '$lib/stores/categories';
 	import { preset } from '$lib/stores/preset';
@@ -49,20 +49,14 @@
 			]
 	);
 
-	// Apply theme whenever seed color, mode, or palette changes
+	// Apply theme whenever any of seed colour, mode, palette, background
+	// image, or overlay strength changes. We funnel everything through a
+	// single $effect so a multi-store update doesn't restage the body
+	// background five times in a row.
 	$effect(() => {
-		return seedColor.subscribe((color) => {
-			applyTheme(color, $colorMode, $paletteMode);
-		});
-	});
-	$effect(() => {
-		return colorMode.subscribe((mode) => {
-			applyTheme($seedColor, mode, $paletteMode);
-		});
-	});
-	$effect(() => {
-		return paletteMode.subscribe((pm) => {
-			applyTheme($seedColor, $colorMode, pm);
+		applyTheme($seedColor, $colorMode, $paletteMode, {
+			image: $backgroundImage,
+			overlay: $backgroundOverlay,
 		});
 	});
 

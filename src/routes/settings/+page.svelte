@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { seedColor, colorMode, uiScale, paletteMode } from '$lib/stores/theme';
+	import {
+		seedColor,
+		colorMode,
+		uiScale,
+		paletteMode,
+		backgroundImage,
+		backgroundOverlay,
+	} from '$lib/stores/theme';
 	import { nodeId, syncPeers, loadSyncState } from '$lib/stores/sync';
 	import { locale, t } from '$lib/stores/i18n';
 	import { preset } from '$lib/stores/preset';
@@ -167,6 +174,46 @@
 		'#1a1a1a',
 	];
 
+	// ── Background image ──────────────────────────────────────────
+	let backgroundError = $state('');
+
+	function handleChooseBackground() {
+		backgroundError = '';
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = 'image/jpeg,image/png,image/webp';
+		input.onchange = () => {
+			const file = input.files?.[0];
+			if (!file) return;
+			if (!/^image\/(jpe?g|png|webp)$/i.test(file.type)) {
+				backgroundError = $t('background_invalid_type');
+				return;
+			}
+			// 4 MB cap — well below the 5 MB localStorage quota with room for
+			// the data-URL base64 expansion (~33% overhead).
+			if (file.size > 4 * 1024 * 1024) {
+				backgroundError = $t('background_too_large');
+				return;
+			}
+			const reader = new FileReader();
+			reader.onload = () => {
+				if (typeof reader.result === 'string') {
+					backgroundImage.set(reader.result);
+				}
+			};
+			reader.onerror = () => {
+				backgroundError = String(reader.error ?? 'Read failed');
+			};
+			reader.readAsDataURL(file);
+		};
+		input.click();
+	}
+
+	function handleClearBackground() {
+		backgroundImage.set(null);
+		backgroundError = '';
+	}
+
 	function selectColor(color: string) {
 		seedColor.set(color);
 		// Black/near-black swatch activates monochrome mode; any other colour resets to default
@@ -298,6 +345,49 @@
 				></button>
 			{/each}
 		</div>
+	</section>
+
+	<!-- ── Background image ──────────────────────────────────── -->
+	<section class="section">
+		<h2>{$t('label_background')}</h2>
+		<p class="hint">{$t('hint_background')}</p>
+
+		<div class="bg-controls">
+			<button class="btn-secondary" onclick={handleChooseBackground}>
+				🖼 {$t('action_choose_image')}
+			</button>
+			{#if $backgroundImage}
+				<button class="btn-ghost" onclick={handleClearBackground}>
+					✕ {$t('action_clear_image')}
+				</button>
+			{/if}
+		</div>
+
+		{#if $backgroundImage}
+			<div class="bg-preview" style="background-image: url('{$backgroundImage}')"></div>
+			<div class="scale-row" style="margin-top: 14px;">
+				<label class="scale-label" for="bg-overlay-input">
+					{$t('label_overlay_strength')} — {Math.round($backgroundOverlay * 100)}%
+				</label>
+				<input
+					id="bg-overlay-input"
+					type="range"
+					min="0"
+					max="0.95"
+					step="0.05"
+					value={$backgroundOverlay}
+					oninput={(e) => backgroundOverlay.set(parseFloat((e.target as HTMLInputElement).value))}
+					class="scale-slider"
+				/>
+				<div class="scale-markers">
+					<span>0%</span><span>50%</span><span>95%</span>
+				</div>
+			</div>
+		{/if}
+
+		{#if backgroundError}
+			<p class="backup-status error" style="margin-top: 8px;">⚠ {backgroundError}</p>
+		{/if}
 	</section>
 
 	<!-- ── Currency ──────────────────────────────────────────── -->
@@ -511,7 +601,7 @@
 	}
 
 	.section {
-		background: var(--glass-bg);
+		background: var(--glass-bg-base);
 		border: 1px solid var(--glass-border);
 		border-top-color: var(--glass-border-top);
 		border-radius: 12px;
@@ -519,6 +609,7 @@
 		margin-bottom: 16px;
 		backdrop-filter: var(--glass-blur);
 		-webkit-backdrop-filter: var(--glass-blur);
+		box-shadow: var(--glass-shadow);
 		overflow: visible;
 		position: relative;
 	}
@@ -917,4 +1008,25 @@
 		transform: translateX(20px);
 		background: #fff;
 	}
+
+	/* ── Background image picker ─────────────────────────── */
+	.bg-controls {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
+		align-items: center;
+	}
+
+	.bg-preview {
+		margin-top: 14px;
+		width: 100%;
+		height: 140px;
+		border-radius: 10px;
+		background-size: cover;
+		background-position: center;
+		border: 1px solid var(--glass-border);
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+	}
+
+	.backup-status.error { color: var(--color-alert-red); opacity: 0.9; }
 </style>

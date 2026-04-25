@@ -142,13 +142,13 @@
 <style>
 	.dock-item {
 		position: relative;
-		width: 48px;
-		height: 48px;
+		width: calc(50px * var(--ui-scale, 1));
+		height: calc(50px * var(--ui-scale, 1));
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		border: none;
-		border-radius: 12px;
+		border-radius: calc(12px * var(--ui-scale, 1));
 		background: transparent;
 		cursor: pointer;
 		color: var(--dock-fg, #e0e0e0);
@@ -157,13 +157,37 @@
 		text-decoration: none;
 	}
 
-	/* Responsive dock sizing */
+	/* Inner SVG icons grow with the same scale so an icon never looks
+	   stranded inside an over-sized dock cell at high zoom. */
+	.dock-item :global(svg) {
+		width: calc(22px * var(--ui-scale, 1));
+		height: calc(22px * var(--ui-scale, 1));
+	}
+
+	/* Responsive dock sizing — bumps for very wide screens. Uses the same
+	   --ui-scale multiplier so the user's scale slider still has effect. */
 	@media (min-width: 1600px) and (max-width: 2399px) {
-		.dock-item { width: 52px; height: 52px; border-radius: 13px; }
+		.dock-item {
+			width: calc(54px * var(--ui-scale, 1));
+			height: calc(54px * var(--ui-scale, 1));
+			border-radius: calc(13px * var(--ui-scale, 1));
+		}
+		.dock-item :global(svg) {
+			width: calc(24px * var(--ui-scale, 1));
+			height: calc(24px * var(--ui-scale, 1));
+		}
 	}
 
 	@media (min-width: 2400px) {
-		.dock-item { width: 58px; height: 58px; border-radius: 14px; }
+		.dock-item {
+			width: calc(60px * var(--ui-scale, 1));
+			height: calc(60px * var(--ui-scale, 1));
+			border-radius: calc(14px * var(--ui-scale, 1));
+		}
+		.dock-item :global(svg) {
+			width: calc(26px * var(--ui-scale, 1));
+			height: calc(26px * var(--ui-scale, 1));
+		}
 	}
 
 	.dock-item::before {

@@ -102,59 +102,30 @@
 		try {
 			const hasCustomer = customerName.trim().length > 0;
 			const sortId = selected.id;
-			const currentFpp = fpp;
-			const currentPricePerPack = effectivePricePerPack;
-			let orderId: string | undefined;
 
-			// 1. Create order FIRST (so packaging_log can be linked)
-			if (hasCustomer) {
-				orderId = await commands.createOrder({
-					customer_name: customerName.trim(),
-					customer_email: customerEmail.trim() || undefined,
-					customer_phone: customerPhone.trim() || undefined,
-					deadline: deadline || undefined,
-					notes: notes.trim() || undefined,
-					card_color: cardColor || undefined,
-					contact_id: selectedContact?.id,
-					contact_location_id: selectedLocationId || undefined,
-				});
-				await commands.updateOrderExtended(
-					orderId,
-					undefined,
-					deliveryAddress.trim() || undefined,
-					undefined,
-					packCount
-				);
-			}
+			// Single atomic Rust call: order (optional) + packaging + order_item +
+			// pack_assignment + total_amount recompute, all in one SQLite
+			// transaction. If anything fails, nothing is written — no more
+			// "packaging_log present but order_item missing" half-states.
+			await commands.packageFlowersWithOrder({
+				sort_id: sortId,
+				pack_count: packCount,
+				price_per_pack: effectivePricePerPack,
+				customer_name: hasCustomer ? customerName.trim() : undefined,
+				customer_email: customerEmail.trim() || undefined,
+				customer_phone: customerPhone.trim() || undefined,
+				delivery_address: deliveryAddress.trim() || undefined,
+				deadline: deadline || undefined,
+				notes: notes.trim() || undefined,
+				card_color: cardColor || undefined,
+				contact_id: selectedContact?.id,
+				contact_location_id: selectedLocationId || undefined,
+			});
 
-			// 2. Package flowers — link to order when available
-			await flowerSorts.packageFlowers(sortId, packCount, orderId);
-
-			// 3. Write order_items + pack_assignment so the warehouse ↔ order
-			//    chain is complete and prints render correctly.
-			if (orderId) {
-				await orders.addItem({
-					order_id: orderId,
-					item_id: sortId,
-					sort_id: sortId,
-					quantity: packCount,
-					unit_price: currentPricePerPack,
-					pack_count: packCount,
-					stems_per_pack: currentFpp,
-				});
-				try {
-					await commands.createPackAssignment({
-						sort_id: sortId,
-						order_id: orderId,
-						pack_count: packCount,
-						stems_per_pack: currentFpp,
-					});
-				} catch (e) {
-					// Pack assignment is secondary — log but don't fail the flow.
-					console.warn('Failed to create pack assignment:', e);
-				}
-				await orders.load();
-			}
+			// Refresh frontend stores so the warehouse + orders pages see the
+			// new state without a manual reload.
+			await flowerSorts.load();
+			if (hasCustomer) await orders.load();
 
 			successMsg = `✓ Упаковано ${packCount} уп. (${stemsNeeded} шт.)`;
 			// Reset form

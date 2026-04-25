@@ -69,3 +69,48 @@ paletteMode.subscribe((mode) => {
 		localStorage.setItem('palette-mode', mode);
 	}
 });
+
+// ── Background image (data URL, persisted in localStorage) ─────────────────
+// Stored as a data URL so it survives reloads and works without filesystem
+// access. Settings UI clamps the file size before storing to keep the LS
+// quota safe.
+function getInitialBackground(): string | null {
+	if (typeof localStorage === 'undefined') return null;
+	return localStorage.getItem('background-image') || null;
+}
+
+export const backgroundImage = writable<string | null>(getInitialBackground());
+
+backgroundImage.subscribe((value) => {
+	if (typeof localStorage === 'undefined') return;
+	if (value) {
+		try {
+			localStorage.setItem('background-image', value);
+		} catch (e) {
+			// QuotaExceededError — image too large for localStorage. Drop it
+			// silently rather than corrupting other settings; the UI surfaces
+			// a separate size warning at upload time.
+			console.warn('background-image: localStorage quota exceeded', e);
+		}
+	} else {
+		localStorage.removeItem('background-image');
+	}
+});
+
+// ── Background overlay strength (0..1, default 0.55) ──────────────────────
+// Determines how strongly the theme darkens (dark mode) or lightens (light
+// mode) the image so the UI keeps its monochrome feel. Surfacing this lets
+// the user dial it in instead of fighting our default.
+function getInitialOverlay(): number {
+	if (typeof localStorage === 'undefined') return 0.55;
+	const v = parseFloat(localStorage.getItem('background-overlay') ?? '0.55');
+	return isNaN(v) ? 0.55 : Math.min(0.95, Math.max(0, v));
+}
+
+export const backgroundOverlay = writable<number>(getInitialOverlay());
+
+backgroundOverlay.subscribe((v) => {
+	if (typeof localStorage !== 'undefined') {
+		localStorage.setItem('background-overlay', String(v));
+	}
+});

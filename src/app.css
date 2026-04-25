@@ -19,18 +19,30 @@
 	--color-outline-variant: rgba(255, 255, 255, 0.09);
 	--accent: #34d399;
 
-	/* ── Glass Material Tokens (dark defaults) ── */
-	--glass-bg: rgba(255, 255, 255, 0.04);
-	--glass-bg-hover: rgba(255, 255, 255, 0.07);
-	--glass-border: rgba(255, 255, 255, 0.09);
-	--glass-border-top: rgba(255, 255, 255, 0.18);
+	/* ── Liquid-Glass Material Tokens (dark defaults) ──
+	   Three tiers — chosen so a layered UI keeps consistent contrast even
+	   on top of a user-uploaded wallpaper. The previous 4% baseline
+	   disappeared into bright/busy backgrounds; the new tiers stay legible
+	   without becoming opaque slabs.
+	   - bg (8%)        : light surfaces — chips, hover hints
+	   - bg-base (14%)  : DEFAULT card surface (cards, sections, KPIs)
+	   - bg-strong (22%): data-heavy panels (charts, modals, dock)
+	   Each tier is tuned so backdrop-filter blur reads correctly
+	   without making text washed-out. */
+	--glass-bg: rgba(255, 255, 255, 0.08);
+	--glass-bg-hover: rgba(255, 255, 255, 0.12);
+	--glass-bg-base: rgba(255, 255, 255, 0.14);
+	--glass-bg-strong: rgba(255, 255, 255, 0.22);
+	--glass-border: rgba(255, 255, 255, 0.14);
+	--glass-border-top: rgba(255, 255, 255, 0.28);
 	--glass-blur: blur(24px) saturate(180%);
+	--glass-blur-strong: blur(40px) saturate(200%) brightness(1.04);
 	--glass-shadow:
-		inset 0 1px 0 rgba(255, 255, 255, 0.15),
+		inset 0 1px 0 rgba(255, 255, 255, 0.18),
 		0 8px 32px rgba(0, 0, 0, 0.45),
 		0 2px 8px rgba(0, 0, 0, 0.25);
 	--glass-shadow-hover:
-		inset 0 1px 0 rgba(255, 255, 255, 0.22),
+		inset 0 1px 0 rgba(255, 255, 255, 0.25),
 		0 24px 60px rgba(0, 0, 0, 0.55),
 		0 8px 20px rgba(0, 0, 0, 0.3);
 	--glass-radius: 16px;
@@ -66,17 +78,21 @@
 [data-theme="light"] {
 	color-scheme: light;
 
-	/* Glass tokens flip to subtle dark-on-light */
-	--glass-bg: rgba(0, 0, 0, 0.03);
-	--glass-bg-hover: rgba(0, 0, 0, 0.06);
-	--glass-border: rgba(0, 0, 0, 0.08);
-	--glass-border-top: rgba(255, 255, 255, 0.70);
+	/* Same three tiers, mirrored for the light-on-dark inversion.
+	   Light theme uses dark frosted glass over a light wallpaper, so we
+	   bias toward darker tints rather than additive whites. */
+	--glass-bg: rgba(255, 255, 255, 0.40);
+	--glass-bg-hover: rgba(255, 255, 255, 0.55);
+	--glass-bg-base: rgba(255, 255, 255, 0.62);
+	--glass-bg-strong: rgba(255, 255, 255, 0.78);
+	--glass-border: rgba(0, 0, 0, 0.10);
+	--glass-border-top: rgba(255, 255, 255, 0.85);
 	--glass-shadow:
-		inset 0 1px 0 rgba(255, 255, 255, 0.80),
+		inset 0 1px 0 rgba(255, 255, 255, 0.85),
 		0 8px 32px rgba(0, 0, 0, 0.10),
 		0 2px 8px rgba(0, 0, 0, 0.06);
 	--glass-shadow-hover:
-		inset 0 1px 0 rgba(255, 255, 255, 0.90),
+		inset 0 1px 0 rgba(255, 255, 255, 0.95),
 		0 24px 60px rgba(0, 0, 0, 0.14),
 		0 8px 20px rgba(0, 0, 0, 0.08);
 }
@@ -133,6 +149,34 @@ a:hover {
 	box-shadow:
 		inset 0 1px 0 rgba(255, 255, 255, 0.10),
 		0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Liquid Glass Card — the canonical card surface ──
+   Use this on every card/section that overlays content. Provides a
+   consistent tier-2 (--glass-bg-base) backdrop with proper blur, top
+   highlight, and shadow. Components should NOT redefine these values
+   directly — they should compose from this class. */
+.glass-card {
+	background: var(--glass-bg-base);
+	border: 1px solid var(--glass-border);
+	border-top-color: var(--glass-border-top);
+	border-radius: 14px;
+	backdrop-filter: var(--glass-blur);
+	-webkit-backdrop-filter: var(--glass-blur);
+	box-shadow: var(--glass-shadow);
+}
+
+/* ── Liquid Glass Strong — for modals, dock, charts ──
+   Tier-3 surface for elements that must read clearly above any
+   wallpaper, including busy dark scenes. Heavier blur + saturation. */
+.glass-strong {
+	background: var(--glass-bg-strong);
+	border: 1px solid var(--glass-border);
+	border-top-color: var(--glass-border-top);
+	border-radius: var(--glass-radius);
+	backdrop-filter: var(--glass-blur-strong);
+	-webkit-backdrop-filter: var(--glass-blur-strong);
+	box-shadow: var(--glass-shadow);
 }
 
 /* ── Scrollbars ── */

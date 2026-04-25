@@ -351,7 +351,7 @@
 					{@const photoSrc = resolvePhoto(sort.photo_path)}
 					{@const fpp = sort.flowers_per_pack_override ?? $flowerConstants.flowers_per_pack}
 					{@const packValue = sort.pkg_stock * fpp * sort.sell_price_stem}
-					<button class="wh-card" class:wh-has-color={!!sort.color_hex} type="button" style={sort.color_hex ? `background: linear-gradient(135deg, ${sort.color_hex}22 0%, var(--glass-bg) 60%); --card-color: ${sort.color_hex};` : ''} onclick={() => (detailSort = sort)}>
+					<button class="wh-card" class:wh-has-color={!!sort.color_hex} type="button" style={sort.color_hex ? `background: linear-gradient(135deg, ${sort.color_hex}33 0%, var(--glass-bg-base) 70%); --card-color: ${sort.color_hex};` : ''} onclick={() => (detailSort = sort)}>
 						<div class="wh-card-photo">
 							{#if photoSrc}
 								<img src={photoSrc} alt={sort.name} class="wh-card-img" />
@@ -1155,8 +1155,12 @@
 	.btn-pack:hover { opacity: 0.88; }
 	.wh-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 	.wh-kpi-card {
-		background: var(--glass-bg); border: 1px solid var(--glass-border);
+		background: var(--glass-bg-base); border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
 		border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 3px;
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		box-shadow: var(--glass-shadow);
 	}
 	.wh-kpi-val { font-size: 1.7rem; font-weight: 700; color: var(--color-primary); line-height: 1; }
 	.wh-kpi-label { font-size: 0.72rem; color: var(--color-outline); }
@@ -1164,8 +1168,12 @@
 	.wh-empty a { color: var(--color-primary); }
 	.wh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
 	.wh-card {
-		background: var(--glass-bg); border: 1px solid var(--glass-border);
+		background: var(--glass-bg-base); border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
 		border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		box-shadow: var(--glass-shadow);
 	}
 	.wh-card-name { font-size: 0.92rem; font-weight: 600; color: var(--color-on-surface); }
 	.wh-card-variety { font-size: 0.75rem; color: var(--color-outline); }

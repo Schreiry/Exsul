@@ -22,10 +22,19 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost data: blob:",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob:",
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPLOCALDATA/**", "$APPDATA/**"]
+        "scope": [
+          "$APPDATA/**",
+          "$APPDATA/com.exsul.app/**",
+          "$APPDATA/com.exsul.app/flower_photos/**",
+          "$APPDATA/com.exsul.app/contact_photos/**",
+          "$APPLOCALDATA/**",
+          "$APPLOCALDATA/com.exsul.app/**",
+          "$APPCONFIG/**",
+          "$RESOURCE/**"
+        ]
       }
     }
   },
@@ -38,6 +47,11 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
   }
 }

@@ -173,7 +173,7 @@
 				<div class="section-label">Активные соединения</div>
 				<div class="peers-list">
 					{#each $wsPeers as peer (peer.ip)}
-						<div class="peer-row glass-card">
+						<div class="peer-row sync-card">
 							<div class="peer-info">
 								<span class="peer-alias">{peer.alias ?? peer.node_id.slice(0, 8) + '…'}</span>
 								<span class="peer-ip">{peer.ip}</span>
@@ -199,7 +199,7 @@
 			{#if $trustedNodes.length > 0}
 				<div class="trusted-list">
 					{#each $trustedNodes as node (node.node_id)}
-						<div class="trusted-row glass-card">
+						<div class="trusted-row sync-card">
 							<div class="trusted-info">
 								<span class="trusted-alias">{node.alias ?? 'Узел'}</span>
 								<code class="trusted-id">{node.node_id.slice(0, 16)}…</code>
@@ -220,7 +220,7 @@
 			{/if}
 
 			<!-- Add trusted node form -->
-			<div class="add-node-form glass-card">
+			<div class="add-node-form sync-card">
 				<div class="form-title">Добавить узел</div>
 				<input
 					class="glass-input"
@@ -258,33 +258,56 @@
 		position: fixed;
 		inset: 0;
 		background: rgba(0, 0, 0, 0.55);
-		backdrop-filter: blur(4px);
+		backdrop-filter: blur(6px) saturate(120%);
+		-webkit-backdrop-filter: blur(6px) saturate(120%);
 		z-index: 1100;
 	}
 
+	/* Tier-3 liquid glass — same recipe the dock uses. The previous
+	   value was a hard-coded near-black 72% which made the modal look
+	   stuck to the page. Switching to glass tokens keeps it consistent
+	   with every other panel and lets the wallpaper bleed through. */
 	.modal {
 		position: fixed;
 		top: 50%;
 		left: 50%;
 		transform: translate(-50%, -50%);
 		z-index: 1200;
-		width: min(520px, calc(100vw - 32px));
+		width: min(560px, calc(100vw - 32px));
 		max-height: calc(100vh - 80px);
 		overflow-y: auto;
-		border-radius: 20px;
+		border-radius: 22px;
 		padding: 24px;
 		display: flex;
 		flex-direction: column;
 		gap: 20px;
 
-		background: rgba(14, 14, 18, 0.72);
-		backdrop-filter: blur(24px) saturate(180%);
-		-webkit-backdrop-filter: blur(24px) saturate(180%);
-		border: 1px solid rgba(255, 255, 255, 0.10);
+		background:
+			linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.02) 35%, rgba(255,255,255,0.00) 100%),
+			var(--glass-bg-strong, rgba(18, 18, 22, 0.78));
+		backdrop-filter: var(--glass-blur-strong, blur(40px) saturate(200%) brightness(1.04));
+		-webkit-backdrop-filter: var(--glass-blur-strong, blur(40px) saturate(200%) brightness(1.04));
+		border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
 		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.12),
-			0 24px 64px rgba(0, 0, 0, 0.6),
-			0 8px 24px rgba(0, 0, 0, 0.3);
+			inset 0 1px 0 rgba(255, 255, 255, 0.22),
+			inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+			0 28px 72px rgba(0, 0, 0, 0.62),
+			0 10px 28px rgba(0, 0, 0, 0.34);
+	}
+
+	/* Specular highlight along the top edge — same trick as the dock,
+	   gives the modal a glassy "reflection" rather than a flat outline. */
+	.modal::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 8%;
+		right: 8%;
+		height: 1px;
+		background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.55) 50%, transparent 100%);
+		pointer-events: none;
+		opacity: 0.85;
 	}
 
 	/* ── Header ──────────────────────────────── */
@@ -323,7 +346,7 @@
 	}
 
 	.close-btn:hover {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--glass-bg-hover);
 		color: var(--color-on-surface);
 	}
 
@@ -382,22 +405,23 @@
 		flex-shrink: 0;
 	}
 
-	/* ── Inputs / Buttons ────────────────────── */
+	/* ── Inputs / Buttons (use shared glass tokens) ───────── */
 	.glass-input {
 		flex: 1;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.10);
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
 		border-radius: 10px;
 		color: var(--color-on-surface);
 		font-size: 0.85rem;
 		padding: 9px 12px;
 		outline: none;
-		transition: border-color 0.15s;
+		transition: border-color 0.15s, background 0.15s;
 		width: 100%;
 	}
 
 	.glass-input:focus {
 		border-color: var(--color-primary);
+		background: var(--glass-bg-hover);
 	}
 
 	.glass-input::placeholder {
@@ -405,20 +429,24 @@
 	}
 
 	.glass-btn {
-		background: rgba(255, 255, 255, 0.06);
-		border: 1px solid rgba(255, 255, 255, 0.10);
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
 		border-radius: 10px;
 		color: var(--color-on-surface);
 		font-size: 0.82rem;
 		padding: 8px 14px;
 		cursor: pointer;
-		transition: background 0.15s, border-color 0.15s;
+		transition: background 0.15s, border-color 0.15s, transform 0.1s;
 		white-space: nowrap;
 	}
 
 	.glass-btn:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.10);
-		border-color: rgba(255, 255, 255, 0.18);
+		background: var(--glass-bg-hover);
+		border-color: var(--glass-border-top);
+	}
+
+	.glass-btn:active:not(:disabled) {
+		transform: scale(0.97);
 	}
 
 	.glass-btn:disabled {
@@ -427,13 +455,14 @@
 	}
 
 	.glass-btn.accent {
-		background: rgba(52, 211, 153, 0.12);
-		border-color: rgba(52, 211, 153, 0.30);
+		background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 32%, transparent);
 		color: var(--color-primary);
 	}
 
 	.glass-btn.accent:hover:not(:disabled) {
-		background: rgba(52, 211, 153, 0.20);
+		background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+		border-color: color-mix(in srgb, var(--color-primary) 50%, transparent);
 	}
 
 	.input-row {
@@ -451,8 +480,8 @@
 		font-size: 0.80rem;
 		padding: 8px 12px;
 		border-radius: 8px;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
 		color: var(--color-outline);
 	}
 
@@ -469,11 +498,13 @@
 	}
 
 	/* ── Peer rows ───────────────────────────── */
-	.glass-card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+	.sync-card {
+		background: var(--glass-bg);
+		border: 1px solid var(--glass-border);
 		border-radius: 12px;
 		padding: 12px 14px;
+		backdrop-filter: blur(10px) saturate(150%);
+		-webkit-backdrop-filter: blur(10px) saturate(150%);
 	}
 
 	.peers-list,

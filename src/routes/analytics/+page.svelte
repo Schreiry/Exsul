@@ -1077,17 +1077,25 @@
 	/* ── Greenhouse KPIs ── */
 	.gh-kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 	.gh-kpi {
-		background: var(--glass-bg); border: 1px solid var(--glass-border);
+		background: var(--glass-bg-base); border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
 		border-radius: 14px; padding: 14px 16px;
 		display: flex; flex-direction: column; gap: 3px;
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		box-shadow: var(--glass-shadow);
 	}
 	.gh-kpi-val { font-size: 1.7rem; font-weight: 700; color: var(--color-primary); line-height: 1; }
 	.gh-kpi-label { font-size: 0.72rem; color: var(--color-outline); }
 
 	/* ── Chart cards ── */
 	.chart-card {
-		background: var(--glass-bg); border: 1px solid var(--glass-border);
+		background: var(--glass-bg-base); border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
 		border-radius: 14px; padding: 16px; overflow: hidden;
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		box-shadow: var(--glass-shadow);
 	}
 	.chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 	.chart-title { font-size: 0.88rem; font-weight: 600; color: var(--color-on-surface); }
@@ -1120,9 +1128,13 @@
 	/* ── Summary grid ── */
 	.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 	.summary-block {
-		background: var(--glass-bg); border: 1px solid var(--glass-border);
+		background: var(--glass-bg-base); border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
 		border-radius: 16px; padding: 16px;
 		display: flex; flex-direction: column; gap: 12px;
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		box-shadow: var(--glass-shadow);
 	}
 	.summary-block-header { display: flex; align-items: center; gap: 8px; }
 	.summary-icon { color: var(--color-primary); display: flex; }
@@ -1150,13 +1162,17 @@
 	}
 
 	.metric-card {
-		background: var(--color-surface-container);
-		border: 1px solid var(--color-outline-variant);
+		background: var(--glass-bg-base);
+		border: 1px solid var(--glass-border);
+		border-top-color: var(--glass-border-top);
 		border-radius: 12px;
 		padding: 20px;
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
+		backdrop-filter: var(--glass-blur);
+		-webkit-backdrop-filter: var(--glass-blur);
+		box-shadow: var(--glass-shadow);
 	}
 
 	.metric-card.accent { border-color: var(--color-primary); }

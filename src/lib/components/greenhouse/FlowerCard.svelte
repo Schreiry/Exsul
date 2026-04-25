@@ -122,14 +122,22 @@
 	.flower-card {
 		display: flex;
 		flex-direction: column;
-		background: var(--glass-bg, rgba(255,255,255,0.04));
-		border: 1px solid var(--glass-border, rgba(255,255,255,0.09));
+		background: var(--glass-bg-base, rgba(255,255,255,0.14));
+		border: 1px solid var(--glass-border, rgba(255,255,255,0.14));
+		border-top-color: var(--glass-border-top, rgba(255,255,255,0.28));
 		border-radius: 16px;
 		cursor: pointer;
 		text-align: left;
 		transition: transform 0.15s var(--ease-spring), box-shadow 0.15s, border-color 0.15s;
 		overflow: hidden;
 		padding: 0;
+		/* Glass blur with strong saturation so the wallpaper bleeds through
+		   tinted but text under the photo stays legible. */
+		backdrop-filter: var(--glass-blur, blur(20px) saturate(180%));
+		-webkit-backdrop-filter: var(--glass-blur, blur(20px) saturate(180%));
+		box-shadow:
+			inset 0 1px 0 rgba(255, 255, 255, 0.18),
+			0 4px 14px rgba(0, 0, 0, 0.22);
 	}
 
 	.flower-card:hover {
